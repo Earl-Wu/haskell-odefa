@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: d99559374a61e800c31e0e83a8d9a9a6402efd6dc0939505336dc64620adf195
+-- hash: 6941bb662021046026476abcab6eed1f744c366fe94bd14e584fd5201f597139
 
 name:           odefa
 version:        0.1.0.0
@@ -29,12 +29,16 @@ library
   exposed-modules:
       AST.Ast
       Interpreter.Interpreter
+      Parser.Lexer
+      Parser.Parser
+      Parser.Token
   other-modules:
       Paths_odefa
   hs-source-dirs:
       src
   build-depends:
-      base >=4.7 && <5
+      array
+    , base >=4.7 && <5
     , containers
   default-language: Haskell2010
 
@@ -46,7 +50,8 @@ executable odefa-exe
       app
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      base >=4.7 && <5
+      array
+    , base >=4.7 && <5
     , containers
     , odefa
   default-language: Haskell2010
@@ -60,7 +65,8 @@ test-suite odefa-test
       test
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      base >=4.7 && <5
+      array
+    , base >=4.7 && <5
     , containers
     , odefa
   default-language: Haskell2010

@@ -34,7 +34,7 @@ varReplaceClauseBody fn r =
               ConditionalBody (fn x, p, varReplaceFunctionValue fn f1, varReplaceFunctionValue fn f2)
             ProjectionBody (x, i) -> ProjectionBody (fn x, i)
             BinaryOperationBody (x1, op, x2) -> BinaryOperationBody (fn x1, op, fn x2)
-            UnaryOperatorBody (op, x) -> UnaryOperatorBody (op, fn x)
+            UnaryOperationBody (op, x) -> UnaryOperationBody (op, fn x)
 
 varReplaceValue :: (Var -> Var) -> Value -> Value
 varReplaceValue fn v =
@@ -139,7 +139,7 @@ evaluate env lastVar cls =
                                                              otherwise -> Left $ InvalidBinaryOperation v1 op v2
                               let newEnv = M.insert x result env
                               evaluate newEnv (Just x) t
-                          UnaryOperatorBody (op, x) ->
+                          UnaryOperationBody (op, x) ->
                             do
                               v <- varLookUp env x
                               result <- case (op, v) of (UnaOpBoolNot, ValueBool b) -> Right $ ValueBool (not b)

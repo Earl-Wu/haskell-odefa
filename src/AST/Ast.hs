@@ -22,7 +22,7 @@ data CallSiteAnnot = CallSiteAnnot { csaContextuality :: ContextualityCallSiteAn
                                      csaUnit :: ()
                                    } deriving (Show, Eq, Ord)
 
-defaultCallSiteAnnot = CallSiteAnnot CallSiteContextual ()
+defaultCallSiteAnnot = CallSiteAnnot { csaContextuality = CallSiteContextual, csaUnit = ()}
 
 newtype RecordValue = RecordValue (M.Map Ident Var) deriving (Show, Eq, Ord)
 
@@ -35,7 +35,7 @@ data ClauseBody = ValueBody Value | VarBody Var
   | ApplBody (Var, Var, CallSiteAnnot)
   | ConditionalBody (Var, Pattern, FunctionValue, FunctionValue)
   | ProjectionBody (Var, Ident) | BinaryOperationBody (Var, BinaryOperator, Var)
-  | UnaryOperatorBody (UnaryOperator, Var) deriving (Show, Eq, Ord)
+  | UnaryOperationBody (UnaryOperator, Var) deriving (Show, Eq, Ord)
 
 newtype Clause = Clause (Var, ClauseBody) deriving (Show, Eq, Ord)
 
