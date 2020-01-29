@@ -3,7 +3,6 @@ module Parser.Token where
 data OdefaToken
   = Ident String
   | Integer Int
-  | EOF
   | OpenBrace
   | CloseBrace
   | OpenParent
@@ -31,5 +30,4 @@ data OdefaToken
   | BinOpLess
   | BinOpLessEqual
   | BinOpEqual
-  | DoubleSemicolon
   deriving (Eq, Ord, Show)

@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 6941bb662021046026476abcab6eed1f744c366fe94bd14e584fd5201f597139
+-- hash: f62d5d04a730888fdb1cd646788f323bb89ac1c5bcd6ce80b3a86bfa66088e31
 
 name:           odefa
 version:        0.1.0.0
@@ -39,6 +39,7 @@ library
   build-depends:
       array
     , base >=4.7 && <5
+    , bytestring
     , containers
   default-language: Haskell2010
 
@@ -52,6 +53,7 @@ executable odefa-exe
   build-depends:
       array
     , base >=4.7 && <5
+    , bytestring
     , containers
     , odefa
   default-language: Haskell2010
@@ -67,6 +69,7 @@ test-suite odefa-test
   build-depends:
       array
     , base >=4.7 && <5
+    , bytestring
     , containers
     , odefa
   default-language: Haskell2010

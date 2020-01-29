@@ -12,10 +12,14 @@ $alpha = [a-zA-Z]  -- alphabetic characters
 $newline = [\n]
 $identStart = [$alpha \_]
 $identCont = [$alpha $digit \_]
+$commentChar = [\#]
+
+@comment = "#".*
 
 tokens :-
 
   $white+				;
+  @comment      ;
   "{"           { \s -> OpenBrace }
   "}"           { \s -> CloseBrace }
   "("           { \s -> OpenParent }
@@ -45,4 +49,11 @@ tokens :-
   "<="           { \s -> BinOpLessEqual }
   "=="           { \s -> BinOpEqual }
   $identStart [$identCont]*		{ \s -> Ident s }
-  ";;"           { \s -> DoubleSemicolon }
+
+{
+
+getComment :: String -> String
+getComment (_:s) = s
+getComment s = error $ "stripComment: Failed stripping comment: " ++ s
+
+}

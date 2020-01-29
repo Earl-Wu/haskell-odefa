@@ -14,6 +14,21 @@ data OdefaInterpreterError = VariableNotInCurrentEnvironment Var Environment
   | InvalidBinaryOperation Value BinaryOperator Value
   | InvalidUnaryOperation UnaryOperator Value deriving (Show)
 
+showValue :: Value -> String
+showValue val =
+  let recToStr = \(Ident k) -> \(Var (Ident v, _)) -> \acc -> acc ++ k ++ ": " ++ v ++ ";" in
+  case val of
+    ValueRecord (RecordValue es) -> "{ " ++ (M.foldrWithKey recToStr "" es) ++ " }"
+    ValueFunction (FunctionValue (Var (Ident var, _), expr)) -> "Fun " ++ var ++ "-> ..."
+    ValueInt n -> show n
+    ValueBool b -> show b
+    ValueString s -> s
+
+showEnvironment :: Environment -> String
+showEnvironment env =
+  let envToStr = \(Var (Ident k, _)) -> \v -> \acc -> acc ++ k ++ " -> " ++ showValue v ++ ";\n" in
+  "{ " ++ M.foldrWithKey envToStr "" env ++ " }"
+
 varLookUp :: Environment -> Var -> Either OdefaInterpreterError Value
 varLookUp env x =
   case M.lookup x env of Just v -> Right v

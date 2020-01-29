@@ -1,4 +1,5 @@
 {
+
 module Parser.Parser where
 
 import AST.Ast
@@ -7,10 +8,9 @@ import qualified Parser.Token as T
 import qualified Data.Map as M
 import qualified Data.Set as S
 
-
 }
 
-%name parseExpr
+%name parseProgram Prog
 
 %tokentype { T.OdefaToken }
 
@@ -47,8 +47,6 @@ import qualified Data.Set as S
       "=="           { T.BinOpEqual }
       int				    { T.Integer $$ }
       id	        { T.Ident $$ }
-      ";;"           { T.DoubleSemicolon }
-      eof           { T.EOF }
 
 %right FUN
 %left "or"
@@ -59,17 +57,13 @@ import qualified Data.Set as S
 
 %%
 
--- Prog : Expr eof { $1 }
+Prog : Expr { $1 }
 
--- DelimExpr : eof { Nothing }
---           | Expr ";;" { Just $1 }
---           | Expr eof { Just $1 }
+Expr : Clauses { Expr $1 }
 
-Expr : Exprs { Expr $1 }
-
-Exprs : Exprs ";" Clause { $1 ++ [$3] }
-      | Exprs ";" { $1 }
-      | Clause { [$1] }
+Clauses : Clause ";" Clauses { $1 : $3 }
+        | Clause ";" { [$1] }
+        | Clause { [$1] }
 
 Clause : Variable "=" ClauseBody { Clause ($1, $3) }
 
