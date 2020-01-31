@@ -6,15 +6,21 @@ import qualified Data.List as L
 import qualified Data.Set as S
 import qualified Data.Maybe as MB
 
-type Environment = M.Map Var Value
+type InterpVar = Var FreshIdent
+type InterpVal = ConcreteValue FreshIdent
+type InterpFun = FunctionValue FreshIdent InterpVal
+type InterpCls = Clause FreshIdent InterpVal
+type InterpClsBd = ClauseBody FreshIdent InterpVal
 
-data OdefaInterpreterError = VariableNotInCurrentEnvironment Var Environment
-  | EmptyExpression | NonFunctionApplication Var Value
-  | InvalidLabelProjection Ident Value | NonRecordProjection String Value
-  | InvalidBinaryOperation Value BinaryOperator Value
-  | InvalidUnaryOperation UnaryOperator Value deriving (Show)
+type Environment = M.Map InterpVar InterpVal
 
-showValue :: Value -> String
+data OdefaInterpreterError = VariableNotInCurrentEnvironment InterpVar Environment
+  | EmptyExpression | NonFunctionApplication FreshIdent InterpVal
+  | InvalidLabelProjection Ident InterpVal | NonRecordProjection String InterpVal
+  | InvalidBinaryOperation InterpVal BinaryOperator InterpVal
+  | InvalidUnaryOperation UnaryOperator InterpVal deriving (Show)
+
+showValue :: InterpVal -> String
 showValue val =
   let recToStr = \(Ident k) -> \(Var (Ident v, _)) -> \acc -> acc ++ k ++ ": " ++ v ++ ";" in
   case val of
@@ -29,18 +35,18 @@ showEnvironment env =
   let envToStr = \(Var (Ident k, _)) -> \v -> \acc -> acc ++ k ++ " -> " ++ showValue v ++ ";\n" in
   "{ " ++ M.foldrWithKey envToStr "" env ++ " }"
 
-varLookUp :: Environment -> Var -> Either OdefaInterpreterError Value
+varLookUp :: Environment -> InterpVar -> Either OdefaInterpreterError InterpVal
 varLookUp env x =
   case M.lookup x env of Just v -> Right v
                          Nothing -> Left $ VariableNotInCurrentEnvironment x env
 
-varReplaceExpr :: (Var -> Var) -> Expr -> Expr
+varReplaceExpr :: (InterpVar -> InterpVar) -> InterpExpr -> InterpExpr
 varReplaceExpr fn (Expr cls) = Expr (L.map (varReplaceClause fn) cls)
 
-varReplaceClause :: (Var -> Var) -> Clause -> Clause
+varReplaceClause :: (InterpVar -> InterpVar) -> InterpCls -> InterpCls
 varReplaceClause fn (Clause (x, b)) = Clause (fn x, varReplaceClauseBody fn b)
 
-varReplaceClauseBody :: (Var -> Var) -> ClauseBody -> ClauseBody
+varReplaceClauseBody :: (InterpVar -> InterpVar) -> InterpClsBd -> InterpClsBd
 varReplaceClauseBody fn r =
   case r of ValueBody v -> ValueBody (varReplaceValue fn v)
             VarBody x -> VarBody (fn x)
@@ -51,7 +57,7 @@ varReplaceClauseBody fn r =
             BinaryOperationBody (x1, op, x2) -> BinaryOperationBody (fn x1, op, fn x2)
             UnaryOperationBody (op, x) -> UnaryOperationBody (op, fn x)
 
-varReplaceValue :: (Var -> Var) -> Value -> Value
+varReplaceValue :: (InterpVar -> InterpVar) -> InterpVal -> InterpVal
 varReplaceValue fn v =
   case v of ValueRecord (RecordValue es) -> ValueRecord (RecordValue(M.map fn es))
             ValueFunction f -> ValueFunction (varReplaceFunctionValue fn f)
@@ -59,17 +65,17 @@ varReplaceValue fn v =
             ValueBool b -> ValueBool b
             ValueString s -> ValueString s
 
-varReplaceFunctionValue :: (Var -> Var) -> FunctionValue -> FunctionValue
+varReplaceFunctionValue :: (InterpVar -> InterpVar) -> InterpFun -> InterpFun
 varReplaceFunctionValue fn (FunctionValue (x, e)) =
   FunctionValue (fn x, varReplaceExpr fn e)
 
-fresheningStackFromVar :: Var -> FresheningStack
+fresheningStackFromVar :: InterpVar -> FresheningStack
 fresheningStackFromVar x =
   let Var(applIdent, applFS) = x in
   let FresheningStack idents = MB.fromJust applFS in
   FresheningStack (applIdent : idents)
 
-replFnFor :: [Clause] -> FresheningStack -> S.Set Var -> Var -> Var
+replFnFor :: [InterpCls] -> FresheningStack -> S.Set InterpVar -> InterpVar -> InterpVar
 replFnFor cls fresheningStack extraBound =
   let boundVars = S.union extraBound $ S.fromList $ L.map (\(Clause(x, _)) -> x) cls in
   let replFn x = if S.member x boundVars
@@ -77,7 +83,7 @@ replFnFor cls fresheningStack extraBound =
                   else x
   in replFn
 
-freshWire :: FunctionValue -> Var -> Var -> [Clause]
+freshWire :: InterpFun -> InterpVar -> InterpVar -> [InterpCls]
 freshWire (FunctionValue (param, Expr(body))) arg callSite =
   let fresheningStack = fresheningStackFromVar callSite in
   let replFn = replFnFor body fresheningStack $ S.singleton param in
@@ -87,7 +93,7 @@ freshWire (FunctionValue (param, Expr(body))) arg callSite =
   let tailClause = Clause(callSite, VarBody(lastVar)) in
   [headClause] ++ freshenedBody ++ [tailClause]
 
-matches :: Environment -> Var -> Pattern -> Either OdefaInterpreterError Bool
+matches :: Environment -> InterpVar -> Pattern -> Either OdefaInterpreterError Bool
 matches env x p =
   do
     v <- varLookUp env x
@@ -106,7 +112,7 @@ matches env x p =
                    (ValueBool b, BoolPattern pb) -> Right (b == pb)
                    otherwise -> Right False
 
-evaluate :: Environment -> Maybe Var -> [Clause] -> Either OdefaInterpreterError (Var, Environment)
+evaluate :: Environment -> Maybe InterpVar -> [InterpCls] -> Either OdefaInterpreterError (InterpVar, Environment)
 evaluate env lastVar cls =
   case cls of [] -> case lastVar of Just x -> Right (x, env)
                                     Nothing -> Left $ EmptyExpression
@@ -162,7 +168,7 @@ evaluate env lastVar cls =
                               let newEnv = M.insert x result env
                               evaluate newEnv (Just x) t
 
-eval :: Expr -> Either OdefaInterpreterError (Var, Environment)
+eval :: InterpExpr -> Either OdefaInterpreterError (InterpVar, Environment)
 eval (Expr cls) =
   let env = M.empty in
   let replFn = replFnFor cls (FresheningStack []) S.empty in

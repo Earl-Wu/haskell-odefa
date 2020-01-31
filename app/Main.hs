@@ -11,7 +11,7 @@ import Data.Char
 import System.IO
 import qualified Data.Map as M
 
-parseFile :: FilePath -> IO Expr
+parseFile :: FilePath -> IO (InterpExpr)
 parseFile f = do
   contents <- readFile f
   let tokenList = alexScanTokens contents
@@ -25,15 +25,16 @@ parseFile f = do
 --    [] -> return ()
 --    hd : tl -> handleExpr hd >> handleExprs tl
 --
-handleExpr :: Expr -> IO ()
+handleExpr :: (InterpExpr) -> IO ()
 handleExpr expr =
   do
     let res = eval expr
     case res of Left err -> putStrLn (show err)
-                Right (v, env) -> let val = env M.! v in
-                                  putStrLn ("Your environment is:\n" ++ showEnvironment env) >>
-                                  putStrLn ("\n") >>
-                                  putStrLn ("The evaluation result is:\n" ++ showValue val)
+                Right (v, env) ->
+                  let val = env M.! v in
+                    putStrLn ("Your environment is:\n" ++ showEnvironment env) >>
+                    putStrLn ("\n") >>
+                    putStrLn ("The evaluation result is:\n" ++ showValue val)
 
 main :: IO ()
 main =

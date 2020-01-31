@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: f62d5d04a730888fdb1cd646788f323bb89ac1c5bcd6ce80b3a86bfa66088e31
+-- hash: 0bf42915dbc78067ac8967ade2dba43a5892ee097c2760834553b51e3112eb90
 
 name:           odefa
 version:        0.1.0.0
@@ -28,6 +28,7 @@ source-repository head
 library
   exposed-modules:
       AST.Ast
+      AST.AstUtils
       Interpreter.Interpreter
       Parser.Lexer
       Parser.Parser
