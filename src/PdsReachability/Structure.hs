@@ -24,47 +24,51 @@ import Data.Function
 import qualified Data.Set as S
 import qualified Data.Map as M
 
-data Graph node element where
-   Graph :: (Ord node, Ord element, Eq node, Eq element) =>
+data Graph nt element dynPopFun where
+   Graph :: (Ord nt, Ord element, Ord dynPopFun, Eq nt, Eq element, Eq dynPopFun) =>
             { -- A dictionary stroing all the edges in the graph
-              allEdges :: S.Set (Edge node element),
+              allEdges :: S.Set (Edge nt element dynPopFun),
               -- A dictionary storing pop edges, key - edge src and pop element, val - edge dest)
-              popEdgesBySourceAndElement :: M.Map (node, element) (S.Set node),
+              popEdgesBySourceAndElement :: M.Map (Node nt element dynPopFun, element) (S.Set (Node nt element dynPopFun)),
               -- A dictionary storing nop edges, key - edge src, val - edge dest)
-              nopEdgesBySource :: M.Map node (S.Set node),
+              nopEdgesBySource :: M.Map (Node nt element dynPopFun) (S.Set (Node nt element dynPopFun)),
               -- A dictionary string nop edges, key - edge dest, val - edge src
-              nopEdgesByDest :: M.Map node (S.Set node),
+              nopEdgesByDest :: M.Map (Node nt element dynPopFun) (S.Set (Node nt element dynPopFun)),
               -- A dictionary string push edges, key - (edge dest, push element), val - edge src
-              pushEdgesByDestAndElement :: M.Map (node, element) (S.Set node),
+              pushEdgesByDestAndElement :: M.Map ((Node nt element dynPopFun), element) (S.Set (Node nt element dynPopFun)),
               -- A dictionary string push edges, key - edge dest, val - (edge src, push element)
-              pushEdgesByDest :: M.Map node (S.Set (node, element))
-            } -> Graph node element
-deriving instance (Show node, Show element) => (Show (Graph node element))
-deriving instance (Eq (Graph node element))
-deriving instance (Ord (Graph node element))
+              pushEdgesByDest :: M.Map (Node nt element dynPopFun) (S.Set ((Node nt element dynPopFun), element))
+            } -> Graph nt element dynPopFun
+deriving instance (Show nt, Show element, Show dynPopFun) => (Show (Graph nt element dynPopFun))
+deriving instance (Eq (Graph nt element dynPopFun))
+deriving instance (Ord (Graph nt element dynPopFun))
 
-data Edge node element
-  = Edge (node, StackAction element, node) deriving (Show, Eq, Ord)
+data Node nt element dynPopFun
+  = UserNode nt
+  | IntermediateNode ([StackAction element dynPopFun], Node nt element dynPopFun) deriving (Show, Eq, Ord)
 
-data StackAction element
+data Edge nt element dynPopFun
+  = Edge (Node nt element dynPopFun, StackAction element dynPopFun, Node nt element dynPopFun) deriving (Show, Eq, Ord)
+
+data StackAction element dynPopFun
   = Push element
   | Pop element
-  -- | DynamicPop 
+  | DynamicPop dynPopFun
   | Nop deriving (Show, Eq, Ord)
 
 -- This function unpacks the GADT so that the functions required by the
 -- constraints are exposed
 withGraph ::
-  Graph node element ->
-  ((Eq node, Eq element, Ord node, Ord element) => () -> a) ->
+  Graph nt element dynPopFun ->
+  ((Eq nt, Eq element, Eq dynPopFun, Ord nt, Ord element, Ord dynPopFun) => () -> a) ->
   a
 withGraph g f =
   case g of
     Graph {} -> f ()
 
 emptyGraph ::
-  (Ord node, Ord element, Eq node, Eq element) =>
-  Graph node element
+  (Ord nt, Ord element, Ord dynPopFun, Eq nt, Eq element, Eq dynPopFun) =>
+  Graph nt element dynPopFun
 emptyGraph
   = Graph { allEdges = S.empty,
             popEdgesBySourceAndElement = M.empty,
@@ -73,8 +77,8 @@ emptyGraph
             pushEdgesByDestAndElement = M.empty,
             pushEdgesByDest = M.empty }
 
-graphFromEdges :: (Ord node, Ord element) =>
-  S.Set (Edge node element) -> Graph node element
+graphFromEdges :: (Ord nt, Ord element, Ord dynPopFun) =>
+  S.Set (Edge nt element dynPopFun) -> Graph nt element dynPopFun
 graphFromEdges edgeSet =
   S.foldl (\acc -> \e -> addEdge e acc) emptyGraph edgeSet
 
@@ -86,9 +90,9 @@ alterMap m (k, v) =
     else M.insert k (S.singleton v) m
 
 addEdge ::
-  Edge node element ->
-  Graph node element ->
-  Graph node element
+  Edge nt element dynPopFun ->
+  Graph nt element dynPopFun ->
+  Graph nt element dynPopFun
 addEdge (e@(Edge (n1, sa, n2))) g =
   withGraph g $ \() ->
   let newEdges = S.insert e (allEdges g) in
@@ -121,12 +125,12 @@ addEdge (e@(Edge (n1, sa, n2))) g =
       in
       newGraph
 
-getEdges :: Graph node element -> S.Set (Edge node element)
+getEdges :: Graph nt element dynPopFun -> S.Set (Edge nt element dynPopFun)
 getEdges g =
   allEdges g
 
 findPopEdgesBySourceAndElement ::
-  (node, element) -> Graph node element -> S.Set node
+  (Node nt element dynPopFun, element) -> Graph nt element dynPopFun -> S.Set (Node nt element dynPopFun)
 findPopEdgesBySourceAndElement (n, e) g =
   withGraph g $ \() ->
   let entry = M.lookup (n, e) (popEdgesBySourceAndElement g) in
@@ -135,7 +139,7 @@ findPopEdgesBySourceAndElement (n, e) g =
     Nothing -> S.empty
 
 findNopEdgesBySource ::
-  node -> Graph node element -> S.Set node
+  (Node nt element dynPopFun) -> Graph nt element dynPopFun -> S.Set (Node nt element dynPopFun)
 findNopEdgesBySource n g =
   withGraph g $ \() ->
   let entry = M.lookup n (nopEdgesBySource g) in
@@ -144,7 +148,7 @@ findNopEdgesBySource n g =
     Nothing -> S.empty
 
 findNopEdgesByDest ::
-  node -> Graph node element -> S.Set node
+  (Node nt element dynPopFun) -> Graph nt element dynPopFun -> S.Set (Node nt element dynPopFun)
 findNopEdgesByDest n g =
   withGraph g $ \() ->
   let entry = M.lookup n (nopEdgesByDest g) in
@@ -153,7 +157,7 @@ findNopEdgesByDest n g =
     Nothing -> S.empty
 
 findPushEdgesByDestAndElement ::
-  (node, element) -> Graph node element -> S.Set node
+  (Node nt element dynPopFun, element) -> Graph nt element dynPopFun -> S.Set (Node nt element dynPopFun)
 findPushEdgesByDestAndElement (n, e) g =
   withGraph g $ \() ->
   let entry = M.lookup (n, e) (pushEdgesByDestAndElement g) in
@@ -162,7 +166,7 @@ findPushEdgesByDestAndElement (n, e) g =
     Nothing -> S.empty
 
 findPushEdgesByDest ::
-  node -> Graph node element -> S.Set (node, element)
+  (Node nt element dynPopFun) -> Graph nt element dynPopFun -> S.Set (Node nt element dynPopFun, element)
 findPushEdgesByDest n g =
   withGraph g $ \() ->
   let entry = M.lookup n (pushEdgesByDest g) in

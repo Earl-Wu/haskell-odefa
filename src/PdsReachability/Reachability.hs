@@ -14,34 +14,35 @@ import qualified Data.Map as M
 import qualified Data.Maybe as MB
 import qualified Data.Dequeue as Q
 
-type WorkQueue node element = Q.BankersDequeue (Edge node element)
+type WorkQueue nt element dynPopFun = Q.BankersDequeue (Edge nt element dynPopFun)
 
-data Analysis node element where
-   Analysis :: (Ord node, Ord element, Eq node, Eq element) =>
-    (Graph node element, WorkQueue node element) -> Analysis node element
-deriving instance (Show node, Show element) => (Show (Analysis node element))
+data Analysis nt element dynPopFun where
+   Analysis :: (Ord nt, Ord element, Ord dynPopFun, Eq nt, Eq element, Eq dynPopFun) =>
+    (Graph nt element dynPopFun, WorkQueue nt element dynPopFun) -> Analysis nt element dynPopFun
+deriving instance (Show nt, Show element, Show dynPopFun) => (Show (Analysis nt element dynPopFun))
 
 -- This function unpacks the GADT so that the functions required by the
 -- constraints are exposed
 withAnalysis ::
-  Analysis node element ->
-  ((Eq node, Eq element, Ord node, Ord element) => () -> a) ->
+  Analysis nt element dynPopFun ->
+  ((Eq nt, Eq element, Eq dynPopFun, Ord nt, Ord element, Ord dynPopFun) => () -> a) ->
   a
 withAnalysis g f =
   case g of
     Analysis _ -> f ()
 
-emptyAnalysis :: (Ord node, Ord element) => Analysis node element
+-- TODO: assume the dynamicalPopActions function exist
+emptyAnalysis :: (Ord nt, Ord element, Ord dynPopFun) => Analysis nt element dynPopFun
 emptyAnalysis =
   Analysis (emptyGraph, Q.empty)
 
-getGraph :: Analysis node element -> Graph node element
+getGraph :: Analysis nt element dynPopFun -> Graph nt element dynPopFun
 getGraph (Analysis (g, _)) = g
 
-getWorkQueue :: Analysis node element -> WorkQueue node element
+getWorkQueue :: Analysis nt element dynPopFun -> WorkQueue nt element dynPopFun
 getWorkQueue (Analysis (_, wq)) = wq
 
-closureStep :: Analysis node element -> Analysis node element
+closureStep :: Analysis nt element dynPopFun -> Analysis nt element dynPopFun
 closureStep analysis =
   withAnalysis analysis $ \() ->
   let wq = getWorkQueue analysis in
@@ -70,14 +71,14 @@ closureStep analysis =
                 let finalWq = S.foldl (\acc -> \(src, elm) -> Q.pushBack acc (Edge (src, Push elm, n2))) wq2 pushSrcsAndElms in
                 Analysis (g', finalWq)
 
-fullClosure :: Analysis node element -> Analysis node element
+fullClosure :: Analysis nt element dynPopFun -> Analysis nt element dynPopFun
 fullClosure analysis =
   withAnalysis analysis $ \() ->
   let analysis' = closureStep analysis in
   let wq' = getWorkQueue analysis' in
   if (null wq') then analysis' else fullClosure analysis'
 
-updateAnalysis :: Edge node element -> Analysis node element -> Analysis node element
+updateAnalysis :: Edge nt element dynPopFun -> Analysis nt element dynPopFun -> Analysis nt element dynPopFun
 updateAnalysis e (analysis) =
   withAnalysis analysis $ \() ->
   let g' = addEdge e (getGraph analysis) in
