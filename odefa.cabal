@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 0bf42915dbc78067ac8967ade2dba43a5892ee097c2760834553b51e3112eb90
+-- hash: 8e36ef2cf7de0b1f363dd55a558d8e2371b7d798ee51eb1dafe8502ecd0b7afa
 
 name:           odefa
 version:        0.1.0.0
@@ -27,12 +27,17 @@ source-repository head
 
 library
   exposed-modules:
+      AST.AbstractAstUtils
       AST.Ast
       AST.AstUtils
+      AST.AstWellformedness
       Interpreter.Interpreter
       Parser.Lexer
       Parser.Parser
       Parser.Token
+      PdsReachability.Reachability
+      PdsReachability.Structure
+      Utils.NondeterminismMonad
   other-modules:
       Paths_odefa
   hs-source-dirs:
@@ -42,6 +47,9 @@ library
     , base >=4.7 && <5
     , bytestring
     , containers
+    , dequeue
+    , tasty
+    , tasty-hunit
   default-language: Haskell2010
 
 executable odefa-exe
@@ -56,7 +64,10 @@ executable odefa-exe
     , base >=4.7 && <5
     , bytestring
     , containers
+    , dequeue
     , odefa
+    , tasty
+    , tasty-hunit
   default-language: Haskell2010
 
 test-suite odefa-test
@@ -72,5 +83,8 @@ test-suite odefa-test
     , base >=4.7 && <5
     , bytestring
     , containers
+    , dequeue
     , odefa
+    , tasty
+    , tasty-hunit
   default-language: Haskell2010

@@ -24,6 +24,9 @@ dependencies:
 - containers
 - array
 - bytestring
+- dequeue
+- tasty
+- tasty-hunit
 
 library:
   source-dirs: src

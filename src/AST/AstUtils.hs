@@ -6,13 +6,6 @@ import qualified Data.List as L
 import qualified Data.Set as S
 import qualified Data.Map as M
 
-type ConcreteVar = Var Ident
-type ConcreteVal = ConcreteValue Ident
-type ConcreteFun = FunctionValue Ident ConcreteVal
-type ConcreteRec = RecordValue Ident
-type ConcreteCls = Clause Ident ConcreteVal
-type ConcreteClsBd = ClauseBody Ident ConcreteVal
-
 flatten :: ConcreteExpr -> [ConcreteCls]
 flatten (Expr cls) =
   case cls of

@@ -13,8 +13,19 @@ type FreshIdent = (Ident, Maybe FresheningStack)
 
 type InterpExpr = Expr FreshIdent (ConcreteValue FreshIdent)
 
+type ConcreteVar = Var Ident
+type ConcreteVal = ConcreteValue Ident
+type ConcreteFun = FunctionValue Ident ConcreteVal
+type ConcreteRec = RecordValue Ident
+type ConcreteClsBd = ClauseBody Ident ConcreteVal
+type ConcreteCls = Clause Ident ConcreteVal
 type ConcreteExpr = Expr Ident (ConcreteValue Ident)
 
+type AbstractVar = Var Ident
+type AbstractFun = FunctionValue Ident AbstractValue
+type AbstractRec = RecordValue Ident
+type AbstractClsBd = ClauseBody Ident AbstractValue
+type AbstractCls = Clause Ident AbstractValue
 type AbstractExpr = Expr Ident AbstractValue
 
 data BinaryOperator
@@ -57,7 +68,7 @@ data AbstractValue
   | AbsValueFunction (FunctionValue Ident AbstractValue)
   | AbsValueInt
   | AbsValueBool Bool
-  | AbsValueString String deriving (Show, Eq, Ord)
+  | AbsValueString deriving (Show, Eq, Ord)
 
 data ClauseBody x v
   = ValueBody v
@@ -80,3 +91,12 @@ data Pattern
   | BoolPattern Bool
   | StringPattern
   | AnyPattern deriving (Show, Eq, Ord)
+
+newtype AbsFilteredVal = AbsFilteredVal (AbstractValue, S.Set Pattern, S.Set Pattern) deriving (Show, Eq, Ord)
+
+data AnnotatedClause
+  = UnannotatedClause AbstractCls
+  | EnterClause (AbstractVar, AbstractVar, AbstractCls)
+  | ExitClause (AbstractVar, AbstractVar, AbstractCls)
+  | StartClause AbstractVar
+  | EndClause AbstractVar deriving (Show, Eq, Ord)
