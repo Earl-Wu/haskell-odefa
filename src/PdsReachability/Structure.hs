@@ -1,4 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE GADTs #-}
 
 module PdsReachability.Structure
@@ -22,20 +24,24 @@ import Data.Function
 import qualified Data.Set as S
 import qualified Data.Map as M
 
-data Graph node element
-  = Graph { -- A dictionary stroing all the edges in the graph
-            allEdges :: S.Set (Edge node element),
-            -- A dictionary storing pop edges, key - edge src and pop element, val - edge dest)
-            popEdgesBySourceAndElement :: M.Map (node, element) (S.Set node),
-            -- A dictionary storing nop edges, key - edge src, val - edge dest)
-            nopEdgesBySource :: M.Map node (S.Set node),
-            -- A dictionary string nop edges, key - edge dest, val - edge src
-            nopEdgesByDest :: M.Map node (S.Set node),
-            -- A dictionary string push edges, key - (edge dest, push element), val - edge src
-            pushEdgesByDestAndElement :: M.Map (node, element) (S.Set node),
-            -- A dictionary string push edges, key - edge dest, val - (edge src, push element)
-            pushEdgesByDest :: M.Map node (S.Set (node, element))
-          } deriving (Show, Eq, Ord)
+data Graph node element where
+   Graph :: (Ord node, Ord element, Eq node, Eq element) =>
+            { -- A dictionary stroing all the edges in the graph
+              allEdges :: S.Set (Edge node element),
+              -- A dictionary storing pop edges, key - edge src and pop element, val - edge dest)
+              popEdgesBySourceAndElement :: M.Map (node, element) (S.Set node),
+              -- A dictionary storing nop edges, key - edge src, val - edge dest)
+              nopEdgesBySource :: M.Map node (S.Set node),
+              -- A dictionary string nop edges, key - edge dest, val - edge src
+              nopEdgesByDest :: M.Map node (S.Set node),
+              -- A dictionary string push edges, key - (edge dest, push element), val - edge src
+              pushEdgesByDestAndElement :: M.Map (node, element) (S.Set node),
+              -- A dictionary string push edges, key - edge dest, val - (edge src, push element)
+              pushEdgesByDest :: M.Map node (S.Set (node, element))
+            } -> Graph node element
+deriving instance (Show node, Show element) => (Show (Graph node element))
+deriving instance (Eq (Graph node element))
+deriving instance (Ord (Graph node element))
 
 data Edge node element
   = Edge (node, StackAction element, node) deriving (Show, Eq, Ord)
@@ -43,9 +49,22 @@ data Edge node element
 data StackAction element
   = Push element
   | Pop element
+  -- | DynamicPop 
   | Nop deriving (Show, Eq, Ord)
 
-emptyGraph :: Graph node element
+-- This function unpacks the GADT so that the functions required by the
+-- constraints are exposed
+withGraph ::
+  Graph node element ->
+  ((Eq node, Eq element, Ord node, Ord element) => () -> a) ->
+  a
+withGraph g f =
+  case g of
+    Graph {} -> f ()
+
+emptyGraph ::
+  (Ord node, Ord element, Eq node, Eq element) =>
+  Graph node element
 emptyGraph
   = Graph { allEdges = S.empty,
             popEdgesBySourceAndElement = M.empty,
@@ -66,11 +85,12 @@ alterMap m (k, v) =
     then M.adjust (\s -> S.insert v s) k m
     else M.insert k (S.singleton v) m
 
-addEdge :: (Ord node, Ord element) =>
+addEdge ::
   Edge node element ->
   Graph node element ->
   Graph node element
 addEdge (e@(Edge (n1, sa, n2))) g =
+  withGraph g $ \() ->
   let newEdges = S.insert e (allEdges g) in
   case sa of
     Push se ->
@@ -105,41 +125,46 @@ getEdges :: Graph node element -> S.Set (Edge node element)
 getEdges g =
   allEdges g
 
-findPopEdgesBySourceAndElement :: (Ord node, Ord element) =>
+findPopEdgesBySourceAndElement ::
   (node, element) -> Graph node element -> S.Set node
 findPopEdgesBySourceAndElement (n, e) g =
+  withGraph g $ \() ->
   let entry = M.lookup (n, e) (popEdgesBySourceAndElement g) in
   case entry of
     Just s -> s
     Nothing -> S.empty
 
-findNopEdgesBySource :: (Ord node, Ord element) =>
+findNopEdgesBySource ::
   node -> Graph node element -> S.Set node
 findNopEdgesBySource n g =
+  withGraph g $ \() ->
   let entry = M.lookup n (nopEdgesBySource g) in
   case entry of
     Just s -> s
     Nothing -> S.empty
 
-findNopEdgesByDest :: (Ord node, Ord element) =>
+findNopEdgesByDest ::
   node -> Graph node element -> S.Set node
 findNopEdgesByDest n g =
+  withGraph g $ \() ->
   let entry = M.lookup n (nopEdgesByDest g) in
   case entry of
     Just s -> s
     Nothing -> S.empty
 
-findPushEdgesByDestAndElement :: (Ord node, Ord element) =>
+findPushEdgesByDestAndElement ::
   (node, element) -> Graph node element -> S.Set node
 findPushEdgesByDestAndElement (n, e) g =
+  withGraph g $ \() ->
   let entry = M.lookup (n, e) (pushEdgesByDestAndElement g) in
   case entry of
     Just s -> s
     Nothing -> S.empty
 
-findPushEdgesByDest :: (Ord node, Ord element) =>
+findPushEdgesByDest ::
   node -> Graph node element -> S.Set (node, element)
 findPushEdgesByDest n g =
+  withGraph g $ \() ->
   let entry = M.lookup n (pushEdgesByDest g) in
   case entry of
     Just s -> s

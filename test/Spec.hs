@@ -19,6 +19,8 @@ main = do
      nopNopTest,
      biggerTest1])
 
+
+
 -- First test: Push + Pop matching stack element
 pushPopTestSet :: S.Set (Edge String String)
 pushPopTestSet =

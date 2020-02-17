@@ -1,5 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
-
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE GADTs #-}
 module PdsReachability.Reachability where
 
 import AST.Ast
@@ -14,7 +16,24 @@ import qualified Data.Dequeue as Q
 
 type WorkQueue node element = Q.BankersDequeue (Edge node element)
 
-newtype Analysis node element = Analysis (Graph node element, WorkQueue node element)
+data Analysis node element where
+   Analysis :: (Ord node, Ord element, Eq node, Eq element) =>
+    (Graph node element, WorkQueue node element) -> Analysis node element
+deriving instance (Show node, Show element) => (Show (Analysis node element))
+
+-- This function unpacks the GADT so that the functions required by the
+-- constraints are exposed
+withAnalysis ::
+  Analysis node element ->
+  ((Eq node, Eq element, Ord node, Ord element) => () -> a) ->
+  a
+withAnalysis g f =
+  case g of
+    Analysis _ -> f ()
+
+emptyAnalysis :: (Ord node, Ord element) => Analysis node element
+emptyAnalysis =
+  Analysis (emptyGraph, Q.empty)
 
 getGraph :: Analysis node element -> Graph node element
 getGraph (Analysis (g, _)) = g
@@ -22,41 +41,9 @@ getGraph (Analysis (g, _)) = g
 getWorkQueue :: Analysis node element -> WorkQueue node element
 getWorkQueue (Analysis (_, wq)) = wq
 
--- checkEdgePair :: Edge -> Edge -> Maybe Edge
--- checkEdgePair (Edge (s1, a1, t1)) (Edge (s2, a2, t2)) =
---   if (t1 == s2) then
---     case a1 of
---       Push sa1 ->
---         case a2 of
---           Pop sa2 ->
---             if (sa1 == sa2)
---               then Just $ Edge (s1, Nop, t2)
---               else Nothing
---           Nop ->
---             Just $ Edge (s1, a1, t2)
---           otherwise -> Nothing
---       Nop ->
---         case a2 of
---           Nop -> Just $ Edge (s1, Nop, s2)
---           otherwise -> Nothing
---       otherwise -> Nothing
---   else Nothing
---
--- addEdge :: Graph -> Edge -> WorkQueue -> (WorkQueue, Graph)
--- addEdge (Graph g) e q =
---   let foldFun =
---           \acc -> \elm ->
---           let mbe1 = checkEdgePair e elm in
---           let mbe2 = checkEdgePair elm e in
---           let acc' = if MB.isJust mbe1 then Q.pushBack acc (MB.fromJust mbe1) else acc
---           in
---           if MB.isJust mbe2 then Q.pushBack acc' (MB.fromJust mbe2) else acc'
---   in
---   let q' = S.foldl foldFun q g in
---   (q', Graph (S.insert e g))
-
-closureStep :: (Ord node, Ord element) => Analysis node element -> Analysis node element
+closureStep :: Analysis node element -> Analysis node element
 closureStep analysis =
+  withAnalysis analysis $ \() ->
   let wq = getWorkQueue analysis in
   if (null wq) then analysis
     else
@@ -83,22 +70,15 @@ closureStep analysis =
                 let finalWq = S.foldl (\acc -> \(src, elm) -> Q.pushBack acc (Edge (src, Push elm, n2))) wq2 pushSrcsAndElms in
                 Analysis (g', finalWq)
 
-fullClosure :: (Ord node, Ord element) => Analysis node element -> Analysis node element
+fullClosure :: Analysis node element -> Analysis node element
 fullClosure analysis =
+  withAnalysis analysis $ \() ->
   let analysis' = closureStep analysis in
   let wq' = getWorkQueue analysis' in
   if (null wq') then analysis' else fullClosure analysis'
 
-graphClosure :: (Ord node, Ord element) => Graph node element -> Graph node element
-graphClosure g =
-  let g' = emptyGraph in
-  let initWorkQ = Q.fromList $ S.toList $ getEdges g in
-  let res = fullClosure $ Analysis (g', initWorkQ) in
-  getGraph res
-
--- graphClosure :: Graph -> Graph
--- graphClosure (Graph g) =
---   let g' = Graph S.empty in
---   let initWorkQ = Q.fromList $ S.toList g in
---   let (res, _) = fullClosure g' initWorkQ in
---   res
+updateAnalysis :: Edge node element -> Analysis node element -> Analysis node element
+updateAnalysis e (analysis) =
+  withAnalysis analysis $ \() ->
+  let g' = addEdge e (getGraph analysis) in
+  Analysis (g', getWorkQueue analysis)
