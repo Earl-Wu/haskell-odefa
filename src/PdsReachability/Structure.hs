@@ -49,10 +49,10 @@ deriving instance (Ord (Graph nt element dynPopFun))
 
 data Node nt element dynPopFun
   = UserNode nt
-  | IntermediateNode ([StackAction element dynPopFun], Node nt element dynPopFun) deriving (Show, Eq, Ord)
+  | IntermediateNode [StackAction element dynPopFun] (Node nt element dynPopFun) deriving (Show, Eq, Ord)
 
 data Edge nt element dynPopFun
-  = Edge (Node nt element dynPopFun, StackAction element dynPopFun, Node nt element dynPopFun) deriving (Show, Eq, Ord)
+  = Edge (Node nt element dynPopFun) (StackAction element dynPopFun) (Node nt element dynPopFun) deriving (Show, Eq, Ord)
 
 data StackAction element dynPopFun
   = Push element
@@ -99,7 +99,7 @@ addEdge ::
   Edge nt element dynPopFun ->
   Graph nt element dynPopFun ->
   Graph nt element dynPopFun
-addEdge (e@(Edge (n1, sa, n2))) g =
+addEdge (e@(Edge n1 sa n2)) g =
   withGraph g $ \() ->
   let newEdges = S.insert e (allEdges g) in
   case sa of

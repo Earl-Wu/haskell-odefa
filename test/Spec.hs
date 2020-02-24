@@ -38,16 +38,16 @@ graphClosure :: TestGraph -> TestGraph
 graphClosure g =
   let edges = getEdges g in
   let initialAnalysis = S.foldl (\acc -> \e -> updateAnalysis e acc) emptyAnalysis edges in
-  let fullAnalysis = performClosure doDynPop initialAnalysis in
+  let fullAnalysis = fullClosure doDynPop initialAnalysis in
   getGraph fullAnalysis
 
 -- First test: Push + Pop matching stack element
 pushPopTestSet :: S.Set TestEdge
 pushPopTestSet =
   S.fromList
-    [Edge (UserNode "a", Push "x", UserNode "b"),
-     Edge (UserNode "b", Pop "x", UserNode "c"),
-     Edge (UserNode "a", Nop, UserNode "c")]
+    [Edge (UserNode "a") (Push "x") (UserNode "b"),
+     Edge (UserNode "b") (Pop "x") (UserNode "c"),
+     Edge (UserNode "a") Nop (UserNode "c")]
 
 pushPopTestRes :: TestGraph
 pushPopTestRes = graphFromEdges pushPopTestSet
@@ -55,8 +55,8 @@ pushPopTestRes = graphFromEdges pushPopTestSet
 pushPopTestSetInit :: S.Set TestEdge
 pushPopTestSetInit =
   S.fromList
-    [Edge (UserNode "a", Push "x", UserNode "b"),
-     Edge (UserNode "b", Pop "x", UserNode "c")]
+    [Edge (UserNode "a") (Push "x") (UserNode "b"),
+     Edge (UserNode "b") (Pop "x") (UserNode "c")]
 
 pushPopTestInit :: TestGraph
 pushPopTestInit = graphFromEdges pushPopTestSetInit
@@ -69,8 +69,8 @@ pushPopTest = testCase "Testing push + pop (matching stack element)"
 pushPopTestSet2 :: S.Set TestEdge
 pushPopTestSet2 =
   S.fromList
-    [Edge (UserNode "a", Push "x", UserNode "b"),
-     Edge (UserNode "b", Pop "y", UserNode "c")]
+    [Edge (UserNode "a") (Push "x") (UserNode "b"),
+     Edge (UserNode "b") (Pop "y") (UserNode "c")]
 
 pushPopTestRes2 :: TestGraph
 pushPopTestRes2 = graphFromEdges pushPopTestSet2
@@ -78,8 +78,8 @@ pushPopTestRes2 = graphFromEdges pushPopTestSet2
 pushPopTestSetInit2 :: S.Set TestEdge
 pushPopTestSetInit2 =
   S.fromList
-    [Edge (UserNode "a", Push "x", UserNode "b"),
-     Edge (UserNode "b", Pop "y", UserNode "c")]
+    [Edge (UserNode "a") (Push "x") (UserNode "b"),
+     Edge (UserNode "b") (Pop "y") (UserNode "c")]
 
 pushPopTestInit2 :: TestGraph
 pushPopTestInit2 = graphFromEdges pushPopTestSetInit2
@@ -92,9 +92,9 @@ pushPopTest2 = testCase "Testing push + pop (non-matching stack element)"
 pushNopTestSet :: S.Set TestEdge
 pushNopTestSet =
   S.fromList
-    [Edge (UserNode "a", Push "x", UserNode "b"),
-     Edge (UserNode "b", Nop, UserNode "c"),
-     Edge (UserNode "a", Push "x", UserNode "c")]
+    [Edge (UserNode "a") (Push "x") (UserNode "b"),
+     Edge (UserNode "b") Nop (UserNode "c"),
+     Edge (UserNode "a") (Push "x") (UserNode "c")]
 
 pushNopTestRes :: TestGraph
 pushNopTestRes = graphFromEdges pushNopTestSet
@@ -102,8 +102,8 @@ pushNopTestRes = graphFromEdges pushNopTestSet
 pushNopTestSetInit :: S.Set TestEdge
 pushNopTestSetInit =
   S.fromList
-    [Edge (UserNode "a", Push "x", UserNode "b"),
-     Edge (UserNode "b", Nop, UserNode "c")]
+    [Edge (UserNode "a") (Push "x") (UserNode "b"),
+     Edge (UserNode "b") Nop (UserNode "c")]
 
 pushNopTestInit :: TestGraph
 pushNopTestInit = graphFromEdges pushNopTestSetInit
@@ -116,8 +116,8 @@ pushNopTest = testCase "Testing push + nop"
 popNopTestSet :: S.Set TestEdge
 popNopTestSet =
   S.fromList
-    [Edge (UserNode "a", Pop "x", UserNode "b"),
-     Edge (UserNode "b", Nop, UserNode "c")]
+    [Edge (UserNode "a") (Pop "x") (UserNode "b"),
+     Edge (UserNode "b") Nop (UserNode "c")]
 
 popNopTestRes :: TestGraph
 popNopTestRes = graphFromEdges popNopTestSet
@@ -125,8 +125,8 @@ popNopTestRes = graphFromEdges popNopTestSet
 popNopTestSetInit :: S.Set TestEdge
 popNopTestSetInit =
   S.fromList
-    [Edge (UserNode "a", Pop "x", UserNode "b"),
-     Edge (UserNode "b", Nop, UserNode "c")]
+    [Edge (UserNode "a") (Pop "x") (UserNode "b"),
+     Edge (UserNode "b") Nop (UserNode "c")]
 
 popNopTestInit :: TestGraph
 popNopTestInit = graphFromEdges popNopTestSetInit
@@ -139,9 +139,9 @@ popNopTest = testCase "Testing pop + nop"
 nopNopTestSet :: S.Set TestEdge
 nopNopTestSet =
   S.fromList
-    [Edge (UserNode "a", Nop, UserNode "b"),
-     Edge (UserNode "b", Nop, UserNode "c"),
-     Edge (UserNode "a", Nop, UserNode "c")]
+    [Edge (UserNode "a") Nop (UserNode "b"),
+     Edge (UserNode "b") Nop (UserNode "c"),
+     Edge (UserNode "a") Nop (UserNode "c")]
 
 nopNopTestRes :: TestGraph
 nopNopTestRes = graphFromEdges nopNopTestSet
@@ -149,8 +149,8 @@ nopNopTestRes = graphFromEdges nopNopTestSet
 nopNopTestSetInit :: S.Set TestEdge
 nopNopTestSetInit =
   S.fromList
-    [Edge (UserNode "a", Nop, UserNode "b"),
-     Edge (UserNode "b", Nop, UserNode "c")]
+    [Edge (UserNode "a") Nop (UserNode "b"),
+     Edge (UserNode "b") Nop (UserNode "c")]
 
 nopNopTestInit :: TestGraph
 nopNopTestInit = graphFromEdges nopNopTestSetInit
@@ -163,13 +163,13 @@ nopNopTest = testCase "Testing nop + nop"
 biggerTestSet1 :: S.Set TestEdge
 biggerTestSet1 =
   S.fromList
-    [Edge (UserNode "a", Push "x", UserNode "b"),
-     Edge (UserNode "b", Pop "y", UserNode "c"),
-     Edge (UserNode "b", Nop, UserNode "c"),
-     Edge (UserNode "c", Nop, UserNode "d"),
-     Edge (UserNode "a", Push "x", UserNode "c"),
-     Edge (UserNode "b", Nop, UserNode "d"),
-     Edge (UserNode "a", Push "x", UserNode "d")]
+    [Edge (UserNode "a") (Push "x") (UserNode "b"),
+     Edge (UserNode "b") (Pop "y") (UserNode "c"),
+     Edge (UserNode "b") Nop (UserNode "c"),
+     Edge (UserNode "c") Nop (UserNode "d"),
+     Edge (UserNode "a") (Push "x") (UserNode "c"),
+     Edge (UserNode "b") Nop (UserNode "d"),
+     Edge (UserNode "a") (Push "x") (UserNode "d")]
 
 biggerTestRes1 :: TestGraph
 biggerTestRes1 = graphFromEdges biggerTestSet1
@@ -177,10 +177,10 @@ biggerTestRes1 = graphFromEdges biggerTestSet1
 biggerTestSetInit1 :: S.Set TestEdge
 biggerTestSetInit1 =
   S.fromList
-    [Edge (UserNode "a", Push "x", UserNode "b"),
-     Edge (UserNode "b", Pop "y", UserNode "c"),
-     Edge (UserNode "b", Nop, UserNode "c"),
-     Edge (UserNode "c", Nop, UserNode "d")]
+    [Edge (UserNode "a") (Push "x") (UserNode "b"),
+     Edge (UserNode "b") (Pop "y") (UserNode "c"),
+     Edge (UserNode "b") Nop (UserNode "c"),
+     Edge (UserNode "c") Nop (UserNode "d")]
 
 biggerTestInit1 :: TestGraph
 biggerTestInit1 = graphFromEdges biggerTestSetInit1
@@ -194,17 +194,17 @@ biggerTest1 = testCase "Testing bigger test case"
 dynPopTestSet1 :: S.Set TestEdge
 dynPopTestSet1 =
   S.fromList
-    [Edge (UserNode "a", Push "NULLA", UserNode "b"),
-     Edge (UserNode "b", DynamicPop DynPopFun1, UserNode "c"),
-     Edge (UserNode "a", Push "II",
-            IntermediateNode ([Push "IV", Push "VI", Push "NULLA", Push "I"], UserNode "c")),
-     Edge (IntermediateNode ([Push "IV", Push "VI", Push "NULLA", Push "I"], UserNode "c"),
-            Push "IV", IntermediateNode ([Push "VI", Push "NULLA", Push "I"], UserNode "c")),
-     Edge (IntermediateNode ([Push "VI", Push "NULLA", Push "I"], UserNode "c"),
-            Push "VI", IntermediateNode ([Push "NULLA", Push "I"], UserNode "c")),
-     Edge (IntermediateNode ([Push "NULLA", Push "I"], UserNode "c"),
-            Push "NULLA", IntermediateNode ([Push "I"], UserNode "c")),
-     Edge (IntermediateNode ([Push "I"], UserNode "c"), Push "I", UserNode "c")
+    [Edge (UserNode "a") (Push "NULLA") (UserNode "b"),
+     Edge (UserNode "b") (DynamicPop DynPopFun1) (UserNode "c"),
+     Edge (UserNode "a") (Push "II")
+            (IntermediateNode ([Push "IV", Push "VI", Push "NULLA", Push "I"]) (UserNode "c")),
+     Edge (IntermediateNode ([Push "IV", Push "VI", Push "NULLA", Push "I"]) (UserNode "c"))
+            (Push "IV") (IntermediateNode ([Push "VI", Push "NULLA", Push "I"]) (UserNode "c")),
+     Edge (IntermediateNode ([Push "VI", Push "NULLA", Push "I"]) (UserNode "c"))
+            (Push "VI") (IntermediateNode ([Push "NULLA", Push "I"]) (UserNode "c")),
+     Edge (IntermediateNode ([Push "NULLA", Push "I"]) (UserNode "c"))
+            (Push "NULLA") (IntermediateNode ([Push "I"]) (UserNode "c")),
+     Edge (IntermediateNode ([Push "I"]) (UserNode "c")) (Push "I") (UserNode "c")
     ]
 
 dynPopTestRes1 :: TestGraph
@@ -213,8 +213,8 @@ dynPopTestRes1 = graphFromEdges dynPopTestSet1
 dynPopTestSetInit1 :: S.Set TestEdge
 dynPopTestSetInit1 =
   S.fromList
-    [Edge (UserNode "a", Push "NULLA", UserNode "b"),
-     Edge (UserNode "b", DynamicPop DynPopFun1, UserNode "c")]
+    [Edge (UserNode "a") (Push "NULLA") (UserNode "b"),
+     Edge (UserNode "b") (DynamicPop DynPopFun1) (UserNode "c")]
 
 dynPopTestInit1 :: TestGraph
 dynPopTestInit1 = graphFromEdges dynPopTestSetInit1
@@ -227,14 +227,14 @@ dynPopTest1 = testCase "Testing push + dynpop"
 dynPopTestSet2 :: S.Set TestEdge
 dynPopTestSet2 =
   S.fromList
-    [Edge (UserNode "a", Push "5", UserNode "b"),
-     Edge (UserNode "b", DynamicPop DynPopFun2, UserNode "c"),
-     Edge (UserNode "c", Pop "1", UserNode "d"),
-     Edge (UserNode "a", Push "1", IntermediateNode ([Push "1", Push "1"], UserNode "c")),
-     Edge (IntermediateNode ([Push "1", Push "1"], UserNode "c"), Push "1", IntermediateNode ([Push "1"], UserNode "c")),
-     Edge (IntermediateNode ([Push "1"], UserNode "c"), Push "1", UserNode "c"),
-     Edge (IntermediateNode ([Push "1"], UserNode "c"), Nop, UserNode "d"),
-     Edge (IntermediateNode ([Push "1", Push "1"], UserNode "c"), Push "1", UserNode "d")
+    [Edge (UserNode "a") (Push "5") (UserNode "b"),
+     Edge (UserNode "b") (DynamicPop DynPopFun2) (UserNode "c"),
+     Edge (UserNode "c") (Pop "1") (UserNode "d"),
+     Edge (UserNode "a") (Push "1") (IntermediateNode ([Push "1", Push "1"]) (UserNode "c")),
+     Edge (IntermediateNode ([Push "1", Push "1"]) (UserNode "c")) (Push "1") (IntermediateNode ([Push "1"]) (UserNode "c")),
+     Edge (IntermediateNode ([Push "1"]) (UserNode "c")) (Push "1") (UserNode "c"),
+     Edge (IntermediateNode ([Push "1"]) (UserNode "c")) Nop (UserNode "d"),
+     Edge (IntermediateNode ([Push "1", Push "1"]) (UserNode "c")) (Push "1") (UserNode "d")
     ]
 
 dynPopTestRes2 :: TestGraph
@@ -243,9 +243,9 @@ dynPopTestRes2 = graphFromEdges dynPopTestSet2
 dynPopTestSetInit2 :: S.Set TestEdge
 dynPopTestSetInit2 =
   S.fromList
-    [Edge (UserNode "a", Push "5", UserNode "b"),
-     Edge (UserNode "b", DynamicPop DynPopFun2, UserNode "c"),
-     Edge (UserNode "c", Pop "1", UserNode "d")]
+    [Edge (UserNode "a") (Push "5") (UserNode "b"),
+     Edge (UserNode "b") (DynamicPop DynPopFun2) (UserNode "c"),
+     Edge (UserNode "c") (Pop "1") (UserNode "d")]
 
 dynPopTestInit2 :: TestGraph
 dynPopTestInit2 = graphFromEdges dynPopTestSetInit2

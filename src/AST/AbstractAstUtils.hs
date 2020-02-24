@@ -20,7 +20,7 @@ rv :: [AbstractCls] -> Either AbstractInterpreterError AbstractVar
 rv body =
   case body of
     [] -> Left $ InvariantFailure "Empty function body provided to rv"
-    otherwise -> let Clause (x, _) = L.last body in return x
+    otherwise -> let Clause x _ = L.last body in return x
 
 negativePatternSetSelection ::
   AbstractRec ->
@@ -137,20 +137,20 @@ liftExpr (Expr cls) =
   Expr (L.map liftClause cls)
 
 liftClause :: ConcreteCls -> AbstractCls
-liftClause (Clause (x, b)) =
-  Clause (x, liftClauseBody b)
+liftClause (Clause x b) =
+  Clause x (liftClauseBody b)
 
 liftClauseBody :: ConcreteClsBd -> AbstractClsBd
 liftClauseBody b =
   case b of
     ValueBody v -> ValueBody (liftValue v)
     VarBody x -> VarBody x
-    ApplBody (x, x', annots) -> ApplBody (x, x', annots)
-    ConditionalBody (x, p, f1, f2) ->
-      ConditionalBody (x, p, liftFunctionValue f1, liftFunctionValue f2)
-    ProjectionBody (x, i) -> ProjectionBody (x, i)
-    BinaryOperationBody (x1, op, x2) -> BinaryOperationBody (x1, op, x2)
-    UnaryOperationBody (op, x) -> UnaryOperationBody (op, x)
+    ApplBody x x' annots -> ApplBody x x' annots
+    ConditionalBody x p f1 f2 ->
+      ConditionalBody x p (liftFunctionValue f1) (liftFunctionValue f2)
+    ProjectionBody x i -> ProjectionBody x i
+    BinaryOperationBody x1 op x2 -> BinaryOperationBody x1 op x2
+    UnaryOperationBody op x -> UnaryOperationBody op x
 
 liftValue :: ConcreteVal -> AbstractValue
 liftValue v =
@@ -162,5 +162,5 @@ liftValue v =
     ValueString _ -> AbsValueString
 
 liftFunctionValue :: ConcreteFun -> AbstractFun
-liftFunctionValue (FunctionValue (x, e)) =
-  FunctionValue (x, liftExpr e)
+liftFunctionValue (FunctionValue x e) =
+  FunctionValue x (liftExpr e)

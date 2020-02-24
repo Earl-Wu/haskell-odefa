@@ -10,9 +10,9 @@ flatten :: ConcreteExpr -> [ConcreteCls]
 flatten (Expr cls) =
   case cls of
     [] -> []
-    ((Clause (_, ValueBody (ValueFunction (FunctionValue (_, funBody)))))) : tl ->
+    (Clause _ (ValueBody (ValueFunction (FunctionValue _ funBody)))) : tl ->
       L.head cls : flatten funBody ++ flatten (Expr tl)
-    ((Clause (_, ConditionalBody (_, _, FunctionValue (_, matchBody), FunctionValue (_, antimatchBody))))) : tl ->
+    (Clause _ (ConditionalBody _ _ (FunctionValue _ matchBody) (FunctionValue _ antimatchBody))) : tl ->
       L.head cls : flatten matchBody ++ flatten antimatchBody ++ flatten (Expr tl)
     hd : tl ->
       hd : flatten (Expr tl)
@@ -21,7 +21,7 @@ flattenImmediateBlock :: ConcreteExpr -> [ConcreteCls]
 flattenImmediateBlock (Expr cls) =
   case cls of
     [] -> []
-    ((Clause (_, ConditionalBody (_, _, FunctionValue (_, matchBody), FunctionValue (_, antimatchBody))))) : tl ->
+    (Clause _ (ConditionalBody _ _ (FunctionValue _ matchBody) (FunctionValue _ antimatchBody))) : tl ->
       L.head cls : flattenImmediateBlock matchBody ++ flattenImmediateBlock antimatchBody ++ flatten (Expr tl)
     hd : tl ->
       hd : flattenImmediateBlock (Expr tl)
@@ -29,7 +29,7 @@ flattenImmediateBlock (Expr cls) =
 definedVariables :: ConcreteExpr -> S.Set ConcreteVar
 definedVariables (Expr cls) =
   cls
-  & L.map (\(Clause (boundVar, _)) -> boundVar)
+  & L.map (\(Clause boundVar _) -> boundVar)
   & S.fromList
 
 bindingsWithRepetition :: ConcreteExpr -> [ConcreteVar]
@@ -37,11 +37,11 @@ bindingsWithRepetition expr =
   flatten expr
   & L.map (\c ->
               case c of
-                Clause (boundVar, ValueBody (ValueFunction (FunctionValue (formalParam, _)))) ->
+                Clause boundVar (ValueBody (ValueFunction (FunctionValue formalParam _))) ->
                   [boundVar, formalParam]
-                Clause (boundVar, ConditionalBody (_, _, FunctionValue (matchFormalParam, _), FunctionValue (antimatchFormalParam, _))) ->
+                Clause boundVar (ConditionalBody _ _ (FunctionValue matchFormalParam _) (FunctionValue antimatchFormalParam _)) ->
                   [boundVar, matchFormalParam, antimatchFormalParam]
-                Clause (boundVar, _) ->
+                Clause boundVar _ ->
                   [boundVar]
           )
   & L.concat
@@ -52,15 +52,15 @@ bindings expr = S.fromList $ bindingsWithRepetition expr
 useOccurrences :: ConcreteExpr -> S.Set ConcreteVar
 useOccurrences expr =
   flatten expr
-  & L.map (\(Clause (_, clsBody)) ->
+  & L.map (\(Clause _ clsBody) ->
               case clsBody of
                 ValueBody _ -> S.empty
                 VarBody var -> S.singleton var
-                ApplBody (fun, actualParam, _) -> S.fromList [fun, actualParam]
-                ConditionalBody (subject, _, _, _) -> S.singleton subject
-                ProjectionBody (var, _) -> S.singleton var
-                UnaryOperationBody (_, op) -> S.singleton op
-                BinaryOperationBody (op1, _, op2) -> S.fromList [op1, op2]
+                ApplBody fun actualParam _ -> S.fromList [fun, actualParam]
+                ConditionalBody subject _ _ _ -> S.singleton subject
+                ProjectionBody var _ -> S.singleton var
+                UnaryOperationBody _ op -> S.singleton op
+                BinaryOperationBody op1 _ op2 -> S.fromList [op1, op2]
           )
   & L.foldl S.union S.empty
 
@@ -85,7 +85,7 @@ checkScopeExpr bound expr =
   L.foldl
     (\(bound', result) -> \clause ->
       let result' = result ++ checkScopeClause bound' clause in
-      let Clause(Var x, _) = clause in
+      let Clause (Var x) _ = clause in
       let bound'' = S.insert x bound' in (bound'', result')
     )
     (bound, [])
@@ -93,7 +93,7 @@ checkScopeExpr bound expr =
 
 checkScopeClause :: S.Set Ident -> ConcreteCls -> [(Ident, Ident)]
 checkScopeClause bound c =
-  let Clause(Var(siteX), b) = c in
+  let Clause (Var siteX) b = c in
   checkScopeClauseBody bound siteX b
 
 checkScopeClauseBody :: S.Set Ident -> Ident -> ConcreteClsBd -> [(Ident, Ident)]
@@ -105,21 +105,21 @@ checkScopeClauseBody bound siteX b =
         ValueRecord rv -> checkScopeRecordValue bound siteX rv
         _ -> []
     VarBody (Var x) -> bindFilt bound siteX [x]
-    ApplBody (Var x1, Var x2, _) -> bindFilt bound siteX [x1, x2]
-    ConditionalBody (Var x, _, f1, f2) ->
+    ApplBody (Var x1) (Var x2) _ -> bindFilt bound siteX [x1, x2]
+    ConditionalBody (Var x) _ f1 f2 ->
       bindFilt bound siteX [x] ++
       checkScopeFunctionValue bound f1 ++
       checkScopeFunctionValue bound f2
-    ProjectionBody (Var x, _) ->
+    ProjectionBody (Var x) _ ->
       bindFilt bound siteX [x]
-    UnaryOperationBody (_, Var x) ->
+    UnaryOperationBody _ (Var x) ->
       bindFilt bound siteX [x]
-    BinaryOperationBody (Var x1, _, Var x2) ->
+    BinaryOperationBody (Var x1) _ (Var x2) ->
       bindFilt bound siteX [x1, x2]
 
 checkScopeFunctionValue :: S.Set Ident -> ConcreteFun -> [(Ident, Ident)]
 checkScopeFunctionValue bound f =
-  let FunctionValue (Var x, e) = f in
+  let FunctionValue (Var x) e = f in
   checkScopeExpr (S.insert x bound) e
 
 checkScopeRecordValue :: S.Set Ident -> Ident -> ConcreteRec -> [(Ident, Ident)]
@@ -137,7 +137,7 @@ scopeViolations expr =
 
 rv :: [ConcreteCls] -> ConcreteVar
 rv cs =
-  let Clause (x, _) = L.last cs in x
+  let Clause x _ = L.last cs in x
 
 retv :: ConcreteExpr -> ConcreteVar
 retv e =
@@ -149,21 +149,21 @@ mapExprVars fn e =
 
 mapClauseVars :: (ConcreteVar -> ConcreteVar) -> ConcreteCls -> ConcreteCls
 mapClauseVars fn c =
-  let Clause (x, b) = c in Clause (fn x, mapClauseBodyVars fn b)
+  let Clause x b = c in Clause (fn x) (mapClauseBodyVars fn b)
 
 mapClauseBodyVars :: (ConcreteVar -> ConcreteVar) -> ConcreteClsBd -> ConcreteClsBd
 mapClauseBodyVars fn b =
   case b of
     ValueBody v -> ValueBody (mapValueVars fn v)
     VarBody x -> VarBody (fn x)
-    ApplBody (x1, x2, annots) -> ApplBody (fn x1, fn x2, annots)
-    ConditionalBody (x, p, f1, f2) ->
-      ConditionalBody (fn x, p, mapFunctionVars fn f1, mapFunctionVars fn f2)
-    ProjectionBody (x, l) -> ProjectionBody (fn x, l)
-    BinaryOperationBody (x1, op, x2) ->
-      BinaryOperationBody (fn x1, op, fn x2)
-    UnaryOperationBody (op, x) ->
-      UnaryOperationBody (op, fn x)
+    ApplBody x1 x2 annots -> ApplBody (fn x1) (fn x2) annots
+    ConditionalBody x p f1 f2 ->
+      ConditionalBody (fn x) p (mapFunctionVars fn f1) (mapFunctionVars fn f2)
+    ProjectionBody x l -> ProjectionBody (fn x) l
+    BinaryOperationBody x1 op x2 ->
+      BinaryOperationBody (fn x1) op (fn x2)
+    UnaryOperationBody op x ->
+      UnaryOperationBody op (fn x)
 
 mapValueVars :: (ConcreteVar -> ConcreteVar) -> ConcreteVal -> ConcreteVal
 mapValueVars fn v =
@@ -175,8 +175,8 @@ mapValueVars fn v =
 
 mapFunctionVars :: (ConcreteVar -> ConcreteVar) -> ConcreteFun -> ConcreteFun
 mapFunctionVars fn f =
-  let FunctionValue (x, e) = f in
-  FunctionValue (fn x, mapExprVars fn e)
+  let FunctionValue x e = f in
+  FunctionValue (fn x) (mapExprVars fn e)
 
 mapExprLabels :: (Ident -> Ident) -> ConcreteExpr -> ConcreteExpr
 mapExprLabels fn e =
@@ -184,19 +184,19 @@ mapExprLabels fn e =
 
 mapClauseLabels :: (Ident -> Ident) -> ConcreteCls -> ConcreteCls
 mapClauseLabels fn c =
-  let Clause (x, b) = c in Clause (x, mapClauseBodyLabels fn b)
+  let Clause x b = c in Clause x (mapClauseBodyLabels fn b)
 
 mapClauseBodyLabels :: (Ident -> Ident) -> ConcreteClsBd -> ConcreteClsBd
 mapClauseBodyLabels fn b =
   case b of
     ValueBody v -> ValueBody (mapValueLabels fn v)
     VarBody x -> VarBody x
-    ApplBody (x1, x2, annots) -> ApplBody (x1, x2, annots)
-    ConditionalBody (x, p, f1, f2) ->
-      ConditionalBody (x, mapPatternLabels fn p, mapFunctionLabels fn f1, mapFunctionLabels fn f2)
-    ProjectionBody (x, l) -> ProjectionBody (x, fn l)
-    BinaryOperationBody (x1, op, x2) -> BinaryOperationBody (x1, op, x2)
-    UnaryOperationBody (op, x) -> UnaryOperationBody (op, x)
+    ApplBody x1 x2 annots -> ApplBody x1 x2 annots
+    ConditionalBody x p f1 f2 ->
+      ConditionalBody x (mapPatternLabels fn p) (mapFunctionLabels fn f1) (mapFunctionLabels fn f2)
+    ProjectionBody x l -> ProjectionBody x (fn l)
+    BinaryOperationBody x1 op x2 -> BinaryOperationBody x1 op x2
+    UnaryOperationBody op x -> UnaryOperationBody op x
 
 mapPatternLabels :: (Ident -> Ident) -> Pattern -> Pattern
 mapPatternLabels fn p =
@@ -219,8 +219,8 @@ mapValueLabels fn v =
 
 mapFunctionLabels :: (Ident -> Ident) -> ConcreteFun -> ConcreteFun
 mapFunctionLabels fn f =
-  let FunctionValue (x, e) = f in
-  FunctionValue (x, mapExprLabels fn e)
+  let FunctionValue x e = f in
+  FunctionValue x (mapExprLabels fn e)
 
 mapRecordLabels :: (Ident -> Ident) -> ConcreteRec -> ConcreteRec
 mapRecordLabels fn r =
@@ -239,14 +239,14 @@ transformExprsInExpr fn expr =
 
 transformExprsInClause :: (ConcreteExpr -> ConcreteExpr) -> ConcreteCls -> ConcreteCls
 transformExprsInClause fn c =
-  let Clause (x, b) = c in Clause (x, transformExprsInClauseBody fn b)
+  let Clause x b = c in Clause x (transformExprsInClauseBody fn b)
 
 transformExprsInClauseBody :: (ConcreteExpr -> ConcreteExpr) -> ConcreteClsBd -> ConcreteClsBd
 transformExprsInClauseBody fn b =
   case b of
     ValueBody v -> ValueBody (transformExprsInValue fn v)
-    ConditionalBody (x, p, f1, f2) ->
-        ConditionalBody (x, p, transformExprsInFunction fn f1, transformExprsInFunction fn f2)
+    ConditionalBody x p f1 f2 ->
+        ConditionalBody x p (transformExprsInFunction fn f1) (transformExprsInFunction fn f2)
     otherwise -> b
 
 transformExprsInValue :: (ConcreteExpr -> ConcreteExpr) -> ConcreteVal -> ConcreteVal
@@ -257,5 +257,5 @@ transformExprsInValue fn v =
 
 transformExprsInFunction :: (ConcreteExpr -> ConcreteExpr) -> ConcreteFun -> ConcreteFun
 transformExprsInFunction fn fv =
-  let FunctionValue (x, e) = fv in
-  FunctionValue (x, transformExprsInExpr fn e)
+  let FunctionValue x e = fv in
+  FunctionValue x (transformExprsInExpr fn e)

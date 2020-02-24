@@ -53,8 +53,8 @@ defaultCallSiteAnnot
 newtype RecordValue x
   = RecordValue (M.Map Ident (Var x)) deriving (Show, Eq, Ord)
 
-newtype FunctionValue x v
-  = FunctionValue ((Var x), Expr x v) deriving (Show, Eq, Ord)
+data FunctionValue x v
+  = FunctionValue (Var x) (Expr x v) deriving (Show, Eq, Ord)
 
 data ConcreteValue x
   = ValueRecord (RecordValue x)
@@ -73,14 +73,14 @@ data AbstractValue
 data ClauseBody x v
   = ValueBody v
   | VarBody (Var x)
-  | ApplBody (Var x, Var x, CallSiteAnnot)
-  | ConditionalBody (Var x, Pattern, FunctionValue x v, FunctionValue x v)
-  | ProjectionBody (Var x, Ident)
-  | BinaryOperationBody (Var x, BinaryOperator, Var x)
-  | UnaryOperationBody (UnaryOperator, Var x) deriving (Show, Eq, Ord)
+  | ApplBody (Var x) (Var x) CallSiteAnnot
+  | ConditionalBody (Var x) Pattern (FunctionValue x v) (FunctionValue x v)
+  | ProjectionBody (Var x) Ident
+  | BinaryOperationBody (Var x) BinaryOperator (Var x)
+  | UnaryOperationBody UnaryOperator (Var x) deriving (Show, Eq, Ord)
 
-newtype Clause x v
-  = Clause (Var x, ClauseBody x v) deriving (Show, Eq, Ord)
+data Clause x v
+  = Clause (Var x) (ClauseBody x v) deriving (Show, Eq, Ord)
 
 newtype Expr x v = Expr [(Clause x v)] deriving (Show, Eq, Ord)
 
@@ -92,11 +92,11 @@ data Pattern
   | StringPattern
   | AnyPattern deriving (Show, Eq, Ord)
 
-newtype AbsFilteredVal = AbsFilteredVal (AbstractValue, S.Set Pattern, S.Set Pattern) deriving (Show, Eq, Ord)
+data AbsFilteredVal = AbsFilteredVal AbstractValue (S.Set Pattern) (S.Set Pattern) deriving (Show, Eq, Ord)
 
 data AnnotatedClause
   = UnannotatedClause AbstractCls
-  | EnterClause (AbstractVar, AbstractVar, AbstractCls)
-  | ExitClause (AbstractVar, AbstractVar, AbstractCls)
+  | EnterClause AbstractVar AbstractVar AbstractCls
+  | ExitClause AbstractVar AbstractVar AbstractCls
   | StartClause AbstractVar
   | EndClause AbstractVar deriving (Show, Eq, Ord)

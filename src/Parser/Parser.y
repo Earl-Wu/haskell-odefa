@@ -65,7 +65,7 @@ Clauses : Clause ";" Clauses { $1 : $3 }
         | Clause ";" { [$1] }
         | Clause { [$1] }
 
-Clause : Variable "=" ClauseBody { Clause ($1, $3) }
+Clause : Variable "=" ClauseBody { Clause $1 $3 }
 
 Variable : Identifier { Var ($1, Nothing) }
 
@@ -73,18 +73,18 @@ Identifier : id { Ident $1 }
 
 ClauseBody : Value { ValueBody $1 }
            | Variable { VarBody $1 }
-           | Variable Variable CallSiteAnnots { ApplBody ($1, $2, $3) }
+           | Variable Variable CallSiteAnnots { ApplBody $1 $2 $3 }
            | Variable "~" Pattern "?" FunctionValue ":" FunctionValue
-              { ConditionalBody ($1, $3, $5, $7) }
-           | Variable "." id { ProjectionBody ($1, Ident $3) }
-           | Variable "+" Variable { BinaryOperationBody ($1, BinOpPlus, $3) }
-           | Variable "-" Variable { BinaryOperationBody ($1, BinOpIntMinus, $3) }
-           | Variable "<" Variable { BinaryOperationBody ($1, BinOpIntLessThan, $3) }
-           | Variable "<=" Variable { BinaryOperationBody ($1, BinOpIntLessThanOrEqualTo, $3) }
-           | Variable "==" Variable { BinaryOperationBody ($1, BinOpEqualTo, $3) }
-           | Variable "and" Variable { BinaryOperationBody ($1, BinOpBoolAnd, $3) }
-           | Variable "or" Variable { BinaryOperationBody ($1, BinOpBoolOr, $3) }
-           | "not" Variable { UnaryOperationBody (UnaOpBoolNot, $2) }
+              { ConditionalBody $1 $3 $5 $7 }
+           | Variable "." id { ProjectionBody $1 (Ident $3) }
+           | Variable "+" Variable { BinaryOperationBody $1 BinOpPlus $3 }
+           | Variable "-" Variable { BinaryOperationBody $1 BinOpIntMinus $3 }
+           | Variable "<" Variable { BinaryOperationBody $1 BinOpIntLessThan $3 }
+           | Variable "<=" Variable { BinaryOperationBody $1 BinOpIntLessThanOrEqualTo $3 }
+           | Variable "==" Variable { BinaryOperationBody $1 BinOpEqualTo $3 }
+           | Variable "and" Variable { BinaryOperationBody $1 BinOpBoolAnd $3 }
+           | Variable "or" Variable { BinaryOperationBody $1 BinOpBoolOr $3 }
+           | "not" Variable { UnaryOperationBody UnaOpBoolNot $2 }
 
 CallSiteAnnots : {- empty -} { defaultCallSiteAnnot }
                | CallSiteAnnot CallSiteAnnots { $1 $2 }
@@ -120,7 +120,7 @@ RecPats : RecPats "," RecPat { $1 ++ [$3] }
                | RecPats "," { $1 }
                | RecPat { [$1] }
 
-FunctionValue : "fun" Variable "->" "(" Expr ")" %prec FUN { FunctionValue ($2, $5) }
+FunctionValue : "fun" Variable "->" "(" Expr ")" %prec FUN { FunctionValue $2 $5 }
 
 IntValue : int { $1 }
 
