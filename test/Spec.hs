@@ -12,12 +12,15 @@ type TestEdge = Edge String String DynPopFun
 type TestNode = Node String String DynPopFun
 type TestPath = Path String DynPopFun
 
-data DynPopFun = DynPopFun deriving (Eq, Ord, Show)
+data DynPopFun
+  = DynPopFun1
+  | DynPopFun2 deriving (Eq, Ord, Show)
 
 doDynPop :: DynPopFun -> String -> [TestPath]
 doDynPop dpf se =
-  case DynPopFun of
-    DynPopFun -> [[Push "II", Push "IV", Push "VI", Push se, Push "I"]]
+  case dpf of
+    DynPopFun1 -> [[Push "II", Push "IV", Push "VI", Push se, Push "I"]]
+    DynPopFun2 -> [[Push "1", Push "1", Push "1"]]
 
 main :: IO ()
 main = do
@@ -28,7 +31,8 @@ main = do
      popNopTest,
      nopNopTest,
      biggerTest1,
-     dynPopTest1])
+     dynPopTest1,
+     dynPopTest2])
 
 graphClosure :: TestGraph -> TestGraph
 graphClosure g =
@@ -187,12 +191,11 @@ biggerTest1 = testCase "Testing bigger test case"
 
 
 -- Sixth Test: DynamicPop 1
--- First test: Push + Pop matching stack element
-dynPopTestSet :: S.Set TestEdge
-dynPopTestSet =
+dynPopTestSet1 :: S.Set TestEdge
+dynPopTestSet1 =
   S.fromList
     [Edge (UserNode "a", Push "NULLA", UserNode "b"),
-     Edge (UserNode "b", DynamicPop DynPopFun, UserNode "c"),
+     Edge (UserNode "b", DynamicPop DynPopFun1, UserNode "c"),
      Edge (UserNode "a", Push "II",
             IntermediateNode ([Push "IV", Push "VI", Push "NULLA", Push "I"], UserNode "c")),
      Edge (IntermediateNode ([Push "IV", Push "VI", Push "NULLA", Push "I"], UserNode "c"),
@@ -204,18 +207,49 @@ dynPopTestSet =
      Edge (IntermediateNode ([Push "I"], UserNode "c"), Push "I", UserNode "c")
     ]
 
-dynPopTestRes :: TestGraph
-dynPopTestRes = graphFromEdges dynPopTestSet
+dynPopTestRes1 :: TestGraph
+dynPopTestRes1 = graphFromEdges dynPopTestSet1
 
-dynPopTestSetInit :: S.Set TestEdge
-dynPopTestSetInit =
+dynPopTestSetInit1 :: S.Set TestEdge
+dynPopTestSetInit1 =
   S.fromList
     [Edge (UserNode "a", Push "NULLA", UserNode "b"),
-     Edge (UserNode "b", DynamicPop DynPopFun, UserNode "c")]
+     Edge (UserNode "b", DynamicPop DynPopFun1, UserNode "c")]
 
-dynPopTestInit :: TestGraph
-dynPopTestInit = graphFromEdges dynPopTestSetInit
+dynPopTestInit1 :: TestGraph
+dynPopTestInit1 = graphFromEdges dynPopTestSetInit1
 
 dynPopTest1 :: TestTree
 dynPopTest1 = testCase "Testing push + dynpop"
-  (assertEqual "Should have many new edges" dynPopTestRes (graphClosure dynPopTestInit))
+  (assertEqual "Should have many new edges" dynPopTestRes1 (graphClosure dynPopTestInit1))
+
+-- Seventh Test: DynamicPop 2
+dynPopTestSet2 :: S.Set TestEdge
+dynPopTestSet2 =
+  S.fromList
+    [Edge (UserNode "a", Push "5", UserNode "b"),
+     Edge (UserNode "b", DynamicPop DynPopFun2, UserNode "c"),
+     Edge (UserNode "c", Pop "1", UserNode "d"),
+     Edge (UserNode "a", Push "1", IntermediateNode ([Push "1", Push "1"], UserNode "c")),
+     Edge (IntermediateNode ([Push "1", Push "1"], UserNode "c"), Push "1", IntermediateNode ([Push "1"], UserNode "c")),
+     Edge (IntermediateNode ([Push "1"], UserNode "c"), Push "1", UserNode "c"),
+     Edge (IntermediateNode ([Push "1"], UserNode "c"), Nop, UserNode "d"),
+     Edge (IntermediateNode ([Push "1", Push "1"], UserNode "c"), Push "1", UserNode "d")
+    ]
+
+dynPopTestRes2 :: TestGraph
+dynPopTestRes2 = graphFromEdges dynPopTestSet2
+
+dynPopTestSetInit2 :: S.Set TestEdge
+dynPopTestSetInit2 =
+  S.fromList
+    [Edge (UserNode "a", Push "5", UserNode "b"),
+     Edge (UserNode "b", DynamicPop DynPopFun2, UserNode "c"),
+     Edge (UserNode "c", Pop "1", UserNode "d")]
+
+dynPopTestInit2 :: TestGraph
+dynPopTestInit2 = graphFromEdges dynPopTestSetInit2
+
+dynPopTest2 :: TestTree
+dynPopTest2 = testCase "Testing push + dynpop (2)"
+  (assertEqual "Should have many new edges" dynPopTestRes2 (graphClosure dynPopTestInit2))
