@@ -37,8 +37,8 @@ main = do
 graphClosure :: TestGraph -> TestGraph
 graphClosure g =
   let edges = getEdges g in
-  let initialAnalysis = S.foldl (\acc -> \e -> updateAnalysis e acc) emptyAnalysis edges in
-  let fullAnalysis = fullClosure doDynPop initialAnalysis in
+  let initialAnalysis = S.foldl (\acc -> \e -> updateAnalysis e acc) (emptyAnalysis doDynPop) edges in
+  let fullAnalysis = fullClosure initialAnalysis in
   getGraph fullAnalysis
 
 -- First test: Push + Pop matching stack element
