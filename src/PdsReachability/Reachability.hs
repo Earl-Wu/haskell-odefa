@@ -23,14 +23,17 @@ type WorkQueue nt element dynPopFun = Q.BankersDequeue (Edge nt element dynPopFu
 type Path element dynPopFun = [StackAction element dynPopFun]
 
 data Analysis nt element dynPopFun where
-   Analysis :: (Ord nt, Ord element, Ord dynPopFun, Eq nt, Eq element, Eq dynPopFun) =>
+   Analysis ::
+    (Ord nt, Ord element, Ord dynPopFun, Eq nt, Eq element, Eq dynPopFun) =>
     (dynPopFun -> element -> [Path element dynPopFun]) ->
     Graph nt element dynPopFun ->
     WorkQueue nt element dynPopFun ->
     Analysis nt element dynPopFun
 
-instance (Show nt, Show element, Show dynPopFun) => Show (Analysis nt element dynPopFun) where
-  show (Analysis _ g wq) = "Analysis Graph: " ++ show g ++ ";\n" ++ "WorkQueue: " ++ show wq ++ ";\n"
+instance (Show nt, Show element, Show dynPopFun) =>
+  Show (Analysis nt element dynPopFun) where
+  show (Analysis _ g wq) = "Analysis Graph: " ++ show g ++ ";\n" ++
+    "WorkQueue: " ++ show wq ++ ";\n"
 
 -- This function unpacks the GADT so that the functions required by the
 -- constraints are exposed
@@ -100,8 +103,12 @@ closureStep analysis =
                 let popDests = findPopEdgesBySourceAndElement (n2, se) g in
                 let nopDests = findNopEdgesBySource n2 g in
                 let dynPopDests = findDynPopEdgesBySource n2 g in
-                let wq1 = S.foldl (\acc -> \dest -> Q.pushBack acc (Edge n1 Nop dest)) wq' popDests in
-                let wq2 = S.foldl (\acc -> \dest -> Q.pushBack acc (Edge n1 sa dest)) wq1 nopDests in
+                let wq1 = S.foldl
+                      (\acc -> \dest -> Q.pushBack acc (Edge n1 Nop dest))
+                      wq' popDests in
+                let wq2 = S.foldl
+                      (\acc -> \dest -> Q.pushBack acc (Edge n1 sa dest))
+                      wq1 nopDests in
                 let dynPopDestsMnd = pick $ S.toList $ dynPopDests in
                 let rawEdgesLsts =
                       do
@@ -115,15 +122,23 @@ closureStep analysis =
                 Analysis (getDynPopFun analysis) g' finalWq
               Pop se ->
                 let pushSrcs = findPushEdgesByDestAndElement (n1, se) g in
-                let finalWq = S.foldl (\acc -> \src -> Q.pushBack acc (Edge src Nop n2)) wq' pushSrcs in
+                let finalWq = S.foldl
+                      (\acc -> \src -> Q.pushBack acc (Edge src Nop n2))
+                      wq' pushSrcs in
                 Analysis (getDynPopFun analysis) g' finalWq
               Nop ->
                 let nopDests = findNopEdgesBySource n2 g in
-                let wq1 = S.foldl (\acc -> \dest -> Q.pushBack acc (Edge n1 Nop dest)) wq' nopDests in
+                let wq1 = S.foldl
+                      (\acc -> \dest -> Q.pushBack acc (Edge n1 Nop dest))
+                      wq' nopDests in
                 let nopSrcs = findNopEdgesByDest n1 g in
-                let wq2 = S.foldl (\acc -> \src -> Q.pushBack acc (Edge src Nop n2)) wq1 nopSrcs in
+                let wq2 = S.foldl
+                      (\acc -> \src -> Q.pushBack acc (Edge src Nop n2))
+                      wq1 nopSrcs in
                 let pushSrcsAndElms = findPushEdgesByDest n1 g in
-                let finalWq = S.foldl (\acc -> \(src, elm) -> Q.pushBack acc (Edge src (Push elm) n2)) wq2 pushSrcsAndElms in
+                let finalWq = S.foldl
+                      (\acc -> \(src, elm) -> Q.pushBack acc (Edge src (Push elm) n2))
+                      wq2 pushSrcsAndElms in
                 Analysis doDynPop g' finalWq
               DynamicPop f ->
                 let pushSrcsAndElms = S.toList $ findPushEdgesByDest n1 g in
@@ -149,7 +164,10 @@ fullClosure analysis =
   let wq' = getWorkQueue analysis' in
   if (null wq') then analysis' else fullClosure analysis'
 
-updateAnalysis :: Edge nt element dynPopFun -> Analysis nt element dynPopFun -> Analysis nt element dynPopFun
+updateAnalysis ::
+  Edge nt element dynPopFun ->
+  Analysis nt element dynPopFun ->
+  Analysis nt element dynPopFun
 updateAnalysis e (analysis) =
   withAnalysis analysis $ \() ->
   let g' = addEdge e (getGraph analysis) in
