@@ -7,6 +7,9 @@ import qualified Data.Set as S
 import PdsReachability.Reachability
 import PdsReachability.Structure
 
+
+type TestAnalysis = Analysis String String DynPopFun
+type TestActives = ActiveNodes String String DynPopFun
 type TestGraph = Graph String String DynPopFun
 type TestEdge = Edge String String DynPopFun
 type TestNode = Node String String DynPopFun
@@ -16,8 +19,8 @@ data DynPopFun
   = DynPopFun1
   | DynPopFun2 deriving (Eq, Ord, Show)
 
-doDynPop :: DynPopFun -> String -> [TestPath]
-doDynPop dpf se =
+doDynPop1 :: DynPopFun -> String -> [TestPath]
+doDynPop1 dpf se =
   case dpf of
     DynPopFun1 -> [[Push "II", Push "IV", Push "VI", Push se, Push "I"]]
     DynPopFun2 -> [[Push "1", Push "1", Push "1"]]
@@ -32,12 +35,30 @@ main = do
      nopNopTest,
      biggerTest1,
      dynPopTest1,
-     dynPopTest2])
+     dynPopTest2,
+     activeNodesTest1])
+
+-- fullAnalysis :: TestGraph -> TestAnalysis
+-- fullAnalysis g =
+--   let edges = getEdges g in
+--   let actives = S.map (\(Edge n1 _ _) -> n1) edges in
+--   let initialAnalysis = S.foldl (\acc -> \e -> updateAnalysis e acc) (emptyAnalysis doDynPop1 actives) edges in
+--   fullClosure initialAnalysis
 
 graphClosure :: TestGraph -> TestGraph
 graphClosure g =
   let edges = getEdges g in
-  let initialAnalysis = S.foldl (\acc -> \e -> updateAnalysis e acc) (emptyAnalysis doDynPop) edges in
+  let actives = S.map (\(Edge n1 _ _) -> n1) edges in
+  let preparedAnalysis = (emptyAnalysis doDynPop1) { activeNodes = actives } in
+  let initialAnalysis = S.foldl (\acc -> \e -> updateAnalysis e acc) preparedAnalysis edges in
+  let fullAnalysis = fullClosure initialAnalysis in
+  getGraph fullAnalysis
+
+graphClosureWithActives :: TestActives -> TestGraph -> TestGraph
+graphClosureWithActives actives g =
+  let edges = getEdges g in
+  let preparedAnalysis = (emptyAnalysis doDynPop1) { activeNodes = actives } in
+  let initialAnalysis = S.foldl (\acc -> \e -> updateAnalysis e acc) preparedAnalysis edges in
   let fullAnalysis = fullClosure initialAnalysis in
   getGraph fullAnalysis
 
@@ -189,7 +210,6 @@ biggerTest1 :: TestTree
 biggerTest1 = testCase "Testing bigger test case"
   (assertEqual "Should have multiple new edges" biggerTestRes1 (graphClosure biggerTestInit1))
 
-
 -- Sixth Test: DynamicPop 1
 dynPopTestSet1 :: S.Set TestEdge
 dynPopTestSet1 =
@@ -253,3 +273,41 @@ dynPopTestInit2 = graphFromEdges dynPopTestSetInit2
 dynPopTest2 :: TestTree
 dynPopTest2 = testCase "Testing push + dynpop (2)"
   (assertEqual "Should have many new edges" dynPopTestRes2 (graphClosure dynPopTestInit2))
+
+-- dynPopTest2ActiveNodes :: TestTree
+-- dynPopTest2ActiveNodes = testCase "Testing push + dynpop (2): activeNodes"
+--   (assertEqual "Should have many new edges" S.empty (getActiveNodes $ fullAnalysis dynPopTestInit2))
+
+-- Eighth Test: ActiveNodes 1
+activeNodesTestSet1 :: S.Set TestEdge
+activeNodesTestSet1 =
+  S.fromList
+    [Edge (UserNode "d") (Push "x") (UserNode "b"),
+     Edge (UserNode "b") (Pop "x") (UserNode "f"),
+     Edge (UserNode "a") (Push "y") (UserNode "b"),
+     Edge (UserNode "b") (Pop "y") (UserNode "c"),
+     Edge (UserNode "e") (Push "z") (UserNode "b"),
+     Edge (UserNode "b") (Pop "z") (UserNode "g"),
+     Edge (UserNode "a") Nop (UserNode "c")
+    ]
+
+activeNodesTestRes1 :: TestGraph
+activeNodesTestRes1 = graphFromEdges activeNodesTestSet1
+
+activeNodesTestSetInit1 :: S.Set TestEdge
+activeNodesTestSetInit1 =
+  S.fromList
+    [Edge (UserNode "d") (Push "x") (UserNode "b"),
+     Edge (UserNode "b") (Pop "x") (UserNode "f"),
+     Edge (UserNode "a") (Push "y") (UserNode "b"),
+     Edge (UserNode "b") (Pop "y") (UserNode "c"),
+     Edge (UserNode "e") (Push "z") (UserNode "b"),
+     Edge (UserNode "b") (Pop "z") (UserNode "g")
+    ]
+
+activeNodesTestInit1 :: TestGraph
+activeNodesTestInit1 = graphFromEdges activeNodesTestSetInit1
+
+activeNodesTest1 :: TestTree
+activeNodesTest1 = testCase "Testing activeNodes algorithm"
+  (assertEqual "Should have one new edge" activeNodesTestRes1 (graphClosureWithActives (S.fromList [UserNode "a"]) activeNodesTestInit1))

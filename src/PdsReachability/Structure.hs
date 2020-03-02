@@ -18,6 +18,7 @@ module PdsReachability.Structure
   findNopEdgesByDest,
   findPushEdgesByDestAndElement,
   findPushEdgesByDest,
+  findPushEdgesBySource,
   findDynPopEdgesBySource
 ) where
 
@@ -40,6 +41,8 @@ data Graph nt element dynPopFun where
               pushEdgesByDestAndElement :: M.Map ((Node nt element dynPopFun), element) (S.Set (Node nt element dynPopFun)),
               -- A dictionary string push edges, key - edge dest, val - (edge src, push element)
               pushEdgesByDest :: M.Map (Node nt element dynPopFun) (S.Set ((Node nt element dynPopFun), element)),
+              -- A dictionary string push edges, key - edge src, val - (edge dest, push element)
+              pushEdgesBySource :: M.Map (Node nt element dynPopFun) (S.Set ((Node nt element dynPopFun), element)),
               -- A dictionary string dynamic pop edges, key - edge src, val - (edge dest, dynamic action)
               dynPopEdgesBySource :: M.Map (Node nt element dynPopFun) (S.Set ((Node nt element dynPopFun), dynPopFun))
             } -> Graph nt element dynPopFun
@@ -80,6 +83,7 @@ emptyGraph
             nopEdgesByDest = M.empty,
             pushEdgesByDestAndElement = M.empty,
             pushEdgesByDest = M.empty,
+            pushEdgesBySource = M.empty,
             dynPopEdgesBySource = M.empty
           }
 
@@ -108,9 +112,12 @@ addEdge (e@(Edge n1 sa n2)) g =
       let newMap = alterMap ogMap ((n2, se), n1) in
       let ogMap' = pushEdgesByDest g in
       let newMap' = alterMap ogMap' (n2, (n1, se)) in
+      let ogMap'' = pushEdgesBySource g in
+      let newMap'' = alterMap ogMap'' (n1, (n2, se)) in
       let newGraph = g { allEdges = newEdges,
                          pushEdgesByDestAndElement = newMap,
-                         pushEdgesByDest = newMap' }
+                         pushEdgesByDest = newMap',
+                         pushEdgesBySource = newMap'' }
       in
       newGraph
     Pop se ->
@@ -184,6 +191,15 @@ findPushEdgesByDest ::
 findPushEdgesByDest n g =
   withGraph g $ \() ->
   let entry = M.lookup n (pushEdgesByDest g) in
+  case entry of
+    Just s -> s
+    Nothing -> S.empty
+
+findPushEdgesBySource ::
+  (Node nt element dynPopFun) -> Graph nt element dynPopFun -> S.Set (Node nt element dynPopFun, element)
+findPushEdgesBySource n g =
+  withGraph g $ \() ->
+  let entry = M.lookup n (pushEdgesBySource g) in
   case entry of
     Just s -> s
     Nothing -> S.empty
