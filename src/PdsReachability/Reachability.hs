@@ -30,6 +30,9 @@ type History nt element dynPopFun = S.Set (Edge nt element dynPopFun)
 
 type ActiveNodes nt element dynPopFun = S.Set (Node nt element dynPopFun)
 
+type EdgeFunction nt element dynPopFun =
+  Node nt element dynPopFun -> [Edge nt element dynPopFun]
+
 type Waitlist nt element dynPopFun
   = M.Map (Node nt element dynPopFun) (S.Set (Edge nt element dynPopFun))
 
@@ -42,7 +45,8 @@ data Analysis nt element dynPopFun where
       workQueue :: WorkQueue nt element dynPopFun,
       activeNodes :: ActiveNodes nt element dynPopFun,
       history :: History nt element dynPopFun,
-      waitlist :: Waitlist nt element dynPopFun
+      waitlist :: Waitlist nt element dynPopFun,
+      edgeFunctions :: [EdgeFunction nt element dynPopFun]
     } -> Analysis nt element dynPopFun
 
 -- Cannot derive show for doDynPop so have to manually roll out this function
@@ -61,27 +65,6 @@ withAnalysis ::
 withAnalysis g f =
   case g of
     Analysis {} -> f ()
-
-emptyAnalysis :: (Ord nt, Ord element, Ord dynPopFun) =>
-  (dynPopFun -> element -> [Path element dynPopFun]) ->
-  Analysis nt element dynPopFun
-emptyAnalysis doDynPop =
-  Analysis { doDynPop = doDynPop,
-             graph = emptyGraph,
-             workQueue = Q.empty,
-             activeNodes = S.empty,
-             history = S.empty,
-             waitlist = M.empty
-           }
-
-addActiveNode ::
-  Node nt element dynPopFun ->
-  Analysis nt element dynPopFun ->
-  Analysis nt element dynPopFun
-addActiveNode newNode analysis =
-  withAnalysis analysis $ \() ->
-  let activeNodes' = S.insert newNode (getActiveNodes analysis) in
-  propagateLiveness newNode (analysis { activeNodes = activeNodes' })
 
 getGraph :: Analysis nt element dynPopFun -> Graph nt element dynPopFun
 getGraph analysis = graph analysis
@@ -108,6 +91,83 @@ getWaitlist ::
   Analysis nt element dynPopFun ->
   Waitlist nt element dynPopFun
 getWaitlist analysis = waitlist analysis
+
+getEdgeFunctions ::
+  Analysis nt element dynPopFun ->
+  [EdgeFunction nt element dynPopFun]
+getEdgeFunctions analysis = edgeFunctions analysis
+
+emptyAnalysis :: (Ord nt, Ord element, Ord dynPopFun) =>
+  (dynPopFun -> element -> [Path element dynPopFun]) ->
+  Analysis nt element dynPopFun
+emptyAnalysis doDynPop =
+  Analysis { doDynPop = doDynPop,
+             graph = emptyGraph,
+             workQueue = Q.empty,
+             activeNodes = S.empty,
+             history = S.empty,
+             waitlist = M.empty,
+             edgeFunctions = []
+           }
+
+addEdgeFunction ::
+  EdgeFunction nt element dynPopFun ->
+  Analysis nt element dynPopFun ->
+  Analysis nt element dynPopFun
+addEdgeFunction ef analysis =
+  withAnalysis analysis $ \() ->
+  let wq = getWorkQueue analysis in
+  let history = getHistory analysis in
+  let actives = S.toList $ getActiveNodes analysis in
+  let activeMND = ND.pick actives in
+  let newEdges = L.concat $ ND.toList $
+        do
+          node <- activeMND
+          return $ ef node
+  in
+  let newActives = S.fromList $
+        MB.mapMaybe (\(Edge src _ _) ->
+                       case src of IntermediateNode _ _ -> Just src
+                                   otherwise -> Nothing
+                    ) newEdges in
+  let newEdgesSet = S.fromList newEdges in
+  let finalWq = S.foldl
+        (\acc -> \e ->
+          if S.member e history then acc else
+            Q.pushBack acc e) wq newEdgesSet
+  in
+  let finalHistory = S.foldl
+        (\acc -> \e -> S.insert e acc) history newEdgesSet
+  in
+  analysis { workQueue = finalWq,
+             history = finalHistory,
+             activeNodes = S.union newActives (getActiveNodes analysis),
+             edgeFunctions = ef : (getEdgeFunctions analysis)
+            }
+
+addActiveNode ::
+  Node nt element dynPopFun ->
+  Analysis nt element dynPopFun ->
+  Analysis nt element dynPopFun
+addActiveNode newNode analysis =
+  withAnalysis analysis $ \() ->
+  let activeNodes = getActiveNodes analysis in
+  -- Check whether the node is already active; if it is, we don't have to do anything
+  if S.member newNode activeNodes then analysis else
+    -- If not, then we need to empty the waitlist corresponding to this node,
+    -- call the edge functions, and propagate liveness from it
+    let activeNodes' = S.insert newNode activeNodes in
+    let waitedWork = M.findWithDefault S.empty newNode (getWaitlist analysis) in
+    let waitlist' = M.delete newNode (getWaitlist analysis) in
+    let history' = S.foldl (\acc -> \e -> S.insert e acc) (getHistory analysis) waitedWork in
+    let wq' = S.foldl Q.pushBack (getWorkQueue analysis) waitedWork in
+    let analysis' = analysis { workQueue = wq',
+                               activeNodes = activeNodes',
+                               history = history',
+                               waitlist = waitlist'
+                             }
+    in
+    propagateLiveness newNode analysis'
 
 pathToEdges ::
   Path element dynPopFun ->
@@ -145,15 +205,7 @@ propagateLiveness node analysis =
           (S.map fst $ findPushEdgesBySource node g) (findNopEdgesBySource node g)
         & S.filter (\e -> S.notMember e activeNodes)
   in
-  let activeNodes' = S.union activeNodes connectedNonActiveNodes in
-  let waitedWork = S.foldl (\acc -> \n ->
-                             S.union acc
-                             (M.findWithDefault S.empty n (getWaitlist analysis)))
-                             S.empty connectedNonActiveNodes in
-  let newWq = S.foldl Q.pushBack (getWorkQueue analysis) waitedWork in
-  let analysis' = analysis { workQueue = newWq,
-                             activeNodes = activeNodes' } in
-  S.foldl (\acc -> \n -> propagateLiveness n acc) analysis' connectedNonActiveNodes
+  S.foldl (\acc -> \n -> addActiveNode n acc) analysis connectedNonActiveNodes
 
 closureStep ::
   Analysis nt element dynPopFun ->
@@ -191,18 +243,18 @@ closureStep analysis =
                 let nopDests = findNopEdgesBySource n2 g in
                 let dynPopDests = findDynPopEdgesBySource n2 g in
                 -- Since the source of the new edges will definitely be
-                let wq1 = S.foldl
-                      (\acc -> \dest ->
+                let (wq1, history1) = S.foldl
+                      (\(accWq, accHistory) -> \dest ->
                         let newEdge = Edge n1 Nop dest in
-                        if S.member newEdge history then acc else
-                          Q.pushBack acc newEdge)
-                      wq' popDests in
-                let wq2 = S.foldl
-                      (\acc -> \dest ->
+                        if S.member newEdge accHistory then (accWq, accHistory) else
+                          (Q.pushBack accWq newEdge, S.insert newEdge accHistory))
+                      (wq', history) popDests in
+                let (wq2, history2) = S.foldl
+                      (\(accWq, accHistory) -> \dest ->
                         let newEdge = Edge n1 sa dest in
-                        if S.member newEdge history then acc else
-                          Q.pushBack acc newEdge)
-                      wq1 nopDests in
+                        if S.member newEdge accHistory then (accWq, accHistory) else
+                          (Q.pushBack accWq newEdge, S.insert newEdge accHistory))
+                      (wq1, history1) nopDests in
                 -- having live source nodes (or can we assume the path will always be alive?)
                 let dynPopDestsMnd = pick $ S.toList $ dynPopDests in
                 let rawEdgesLsts =
@@ -222,27 +274,31 @@ closureStep analysis =
                 let newEdgesSet = S.fromList fullEdgesLst in
                 {-- NOTE: Not marking the IntermediateNodes as active --}
                 -- let newEdgesSet = S.fromList $ concat $ ND.toList rawEdgesLsts in
-                let finalWq = S.foldl
-                      (\acc -> \e ->
-                        if S.member e history then acc else
-                          Q.pushBack acc e) wq2 newEdgesSet
+                let (finalWq, finalHistory) = S.foldl
+                      (\(accWq, accHistory) -> \e ->
+                        if S.member e accHistory then (accWq, accHistory) else
+                          (Q.pushBack accWq e, S.insert e accHistory)) (wq2, history2) newEdgesSet
                 in
                 analysis'' { graph = g',
                              workQueue = finalWq,
+                             -- history = finalHistory,
                              activeNodes = S.union newActives (getActiveNodes analysis'')
                            }
               Pop se ->
                 let pushSrcs = findPushEdgesByDestAndElement (n1, se) g in
                 let activeNodes = getActiveNodes analysis' in
+                let history = getHistory analysis' in
                 let activepushSrcs = S.filter (\s -> S.member s activeNodes) pushSrcs in
-                let finalWq = S.foldl
-                      (\acc -> \src ->
+                let (finalWq, finalHistory) = S.foldl
+                      (\(accWq, accHistory) -> \src ->
                         let newEdge = Edge src Nop n2 in
-                        if (S.member newEdge history) then acc else
-                          Q.pushBack acc newEdge)
-                      wq' activepushSrcs in
+                        if (S.member newEdge accHistory) then (accWq, accHistory) else
+                          (Q.pushBack accWq newEdge, S.insert newEdge accHistory))
+                      (wq', history) activepushSrcs in
                 analysis' { graph = g',
-                           workQueue = finalWq }
+                            workQueue = finalWq,
+                            history = finalHistory
+                           }
               Nop ->
                 -- Nop edge propagates liveness
                 let analysis'' = propagateLiveness n2 analysis' in
