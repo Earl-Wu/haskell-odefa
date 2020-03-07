@@ -16,6 +16,11 @@ import qualified Data.Maybe as MB
 import qualified Data.Dequeue as Q
 
 -- TODO: Next step: Edge functions?
+-- Adding edge function requires calling this particular function with all
+-- currently active nodes
+-- When a node becomes active, call every edge function with this node as the
+-- argument.
+-- Edge functions: Node -> [Path]
 
 type WorkQueue nt element dynPopFun = Q.BankersDequeue (Edge nt element dynPopFun)
 
@@ -25,6 +30,9 @@ type History nt element dynPopFun = S.Set (Edge nt element dynPopFun)
 
 type ActiveNodes nt element dynPopFun = S.Set (Node nt element dynPopFun)
 
+type Waitlist nt element dynPopFun
+  = M.Map (Node nt element dynPopFun) (S.Set (Edge nt element dynPopFun))
+
 data Analysis nt element dynPopFun where
    Analysis ::
     (Ord nt, Ord element, Ord dynPopFun, Eq nt, Eq element, Eq dynPopFun) =>
@@ -33,7 +41,8 @@ data Analysis nt element dynPopFun where
       graph :: Graph nt element dynPopFun,
       workQueue :: WorkQueue nt element dynPopFun,
       activeNodes :: ActiveNodes nt element dynPopFun,
-      history :: History nt element dynPopFun
+      history :: History nt element dynPopFun,
+      waitlist :: Waitlist nt element dynPopFun
     } -> Analysis nt element dynPopFun
 
 -- Cannot derive show for doDynPop so have to manually roll out this function
@@ -61,16 +70,18 @@ emptyAnalysis doDynPop =
              graph = emptyGraph,
              workQueue = Q.empty,
              activeNodes = S.empty,
-             history = S.empty
+             history = S.empty,
+             waitlist = M.empty
            }
 
--- TODO: Check whether this is the way to do it
-setActiveNodes ::
-  ActiveNodes nt element dynPopFun ->
+addActiveNode ::
+  Node nt element dynPopFun ->
   Analysis nt element dynPopFun ->
   Analysis nt element dynPopFun
-setActiveNodes actives analysis =
-  analysis { activeNodes = actives }
+addActiveNode newNode analysis =
+  withAnalysis analysis $ \() ->
+  let activeNodes' = S.insert newNode (getActiveNodes analysis) in
+  propagateLiveness newNode (analysis { activeNodes = activeNodes' })
 
 getGraph :: Analysis nt element dynPopFun -> Graph nt element dynPopFun
 getGraph analysis = graph analysis
@@ -93,6 +104,11 @@ getHistory ::
   History nt element dynPopFun
 getHistory analysis = history analysis
 
+getWaitlist ::
+  Analysis nt element dynPopFun ->
+  Waitlist nt element dynPopFun
+getWaitlist analysis = waitlist analysis
+
 pathToEdges ::
   Path element dynPopFun ->
   Node nt element dynPopFun ->
@@ -100,9 +116,7 @@ pathToEdges ::
   [Edge nt element dynPopFun]
 pathToEdges path src dest =
   case path of
-    -- [] -> [Edge src Nop dest]
     [] -> [Edge src Nop dest]
-    -- hd : [] -> [Edge src hd dest]
     hd : [] -> [Edge src hd dest]
     hd : tl ->
       let loop lst acc prevSrc =
@@ -116,6 +130,7 @@ pathToEdges path src dest =
       let firstImdNode = IntermediateNode tl dest in
       loop tl [Edge src hd firstImdNode] firstImdNode
 
+-- TODO: Leave comments to explain the algorithm
 propagateLiveness ::
   Node nt element dynPopFun ->
   Analysis nt element dynPopFun ->
@@ -124,13 +139,20 @@ propagateLiveness node analysis =
   withAnalysis analysis $ \() ->
   let g = getGraph analysis in
   let activeNodes = getActiveNodes analysis in
+  -- Liveness is only propagated through push and nop edges
   let connectedNonActiveNodes =
         S.union
           (S.map fst $ findPushEdgesBySource node g) (findNopEdgesBySource node g)
         & S.filter (\e -> S.notMember e activeNodes)
   in
   let activeNodes' = S.union activeNodes connectedNonActiveNodes in
-  let analysis' = analysis { activeNodes = activeNodes' } in
+  let waitedWork = S.foldl (\acc -> \n ->
+                             S.union acc
+                             (M.findWithDefault S.empty n (getWaitlist analysis)))
+                             S.empty connectedNonActiveNodes in
+  let newWq = S.foldl Q.pushBack (getWorkQueue analysis) waitedWork in
+  let analysis' = analysis { workQueue = newWq,
+                             activeNodes = activeNodes' } in
   S.foldl (\acc -> \n -> propagateLiveness n acc) analysis' connectedNonActiveNodes
 
 closureStep ::
@@ -147,12 +169,10 @@ closureStep analysis =
       let history = getHistory analysis in
       let doDynPop = getDynPopFun analysis in
       let ogActives = getActiveNodes analysis in
-      -- TODO: Check problem: IntermediateNodes aren't marked active soon enough
       -- If the edge is in the workqueue, we have not done work on it
       let (e@(Edge n1 sa n2), wq') = MB.fromJust (Q.popFront wq) in
-      -- TODO: Check this
       -- It's true that all edges in the workqueue should have active sources,
-      -- but we never explicit change the active status of IntermediateNodes
+      -- but we never explicitly change the active status of IntermediateNodes
       -- I think we can either change the activeness here or when we are creating
       -- the path. I don't know which one is the correct move
       -- Maybe for the sake of invariance, we should change it in the path
@@ -183,7 +203,6 @@ closureStep analysis =
                         if S.member newEdge history then acc else
                           Q.pushBack acc newEdge)
                       wq1 nopDests in
-                -- TODO: Check whether we need to be careful with the dynamic pop edges
                 -- having live source nodes (or can we assume the path will always be alive?)
                 let dynPopDestsMnd = pick $ S.toList $ dynPopDests in
                 let rawEdgesLsts =
@@ -289,6 +308,8 @@ fullClosure analysis =
   let wq' = getWorkQueue analysis' in
   if (null wq') then analysis' else fullClosure analysis'
 
+-- TODO: Yet another dictionary keeping track of edges in the graph with inactive
+-- sources so that we can dump them into workQueue when their source becomes active
 updateAnalysis ::
   Edge nt element dynPopFun ->
   Analysis nt element dynPopFun ->
@@ -315,4 +336,15 @@ updateAnalysis (e@(Edge src sa dest)) (analysis) =
     -- If the source is inactive, we only add it to the graph, and will wake
     -- it up later on demand
     else
-      analysis { graph = g' }
+      let waitlist = getWaitlist analysis in
+      let waitlist' =
+            if M.member src waitlist
+            then
+              let curEntry = M.findWithDefault S.empty src waitlist in
+              let newEntry = S.insert e curEntry in
+              M.adjust (\_ -> newEntry) src waitlist
+            else
+              M.insert src (S.singleton e) waitlist
+      in
+      analysis { graph = g',
+                 waitlist = waitlist' }

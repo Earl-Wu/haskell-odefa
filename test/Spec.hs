@@ -38,6 +38,13 @@ main = do
      dynPopTest2,
      activeNodesTest1])
 
+setActiveNodes ::
+ TestActives ->
+ TestAnalysis ->
+ TestAnalysis
+setActiveNodes actives analysis =
+  S.foldl (flip addActiveNode) analysis actives
+
 -- fullAnalysis :: TestGraph -> TestAnalysis
 -- fullAnalysis g =
 --   let edges = getEdges g in
@@ -54,12 +61,20 @@ graphClosure g =
   let fullAnalysis = fullClosure initialAnalysis in
   getGraph fullAnalysis
 
+-- graphClosureWithActives :: TestActives -> TestGraph -> TestGraph
+-- graphClosureWithActives actives g =
+--   let edges = getEdges g in
+--   let preparedAnalysis = (emptyAnalysis doDynPop1) { activeNodes = actives } in
+--   let initialAnalysis = S.foldl (\acc -> \e -> updateAnalysis e acc) preparedAnalysis edges in
+--   let fullAnalysis = fullClosure initialAnalysis in
+--   getGraph fullAnalysis
+
 graphClosureWithActives :: TestActives -> TestGraph -> TestGraph
 graphClosureWithActives actives g =
   let edges = getEdges g in
-  let preparedAnalysis = (emptyAnalysis doDynPop1) { activeNodes = actives } in
-  let initialAnalysis = S.foldl (\acc -> \e -> updateAnalysis e acc) preparedAnalysis edges in
-  let fullAnalysis = fullClosure initialAnalysis in
+  let initialAnalysis = S.foldl (\acc -> \e -> updateAnalysis e acc) (emptyAnalysis doDynPop1) edges in
+  let preparedAnalysis = setActiveNodes actives initialAnalysis in
+  let fullAnalysis = fullClosure preparedAnalysis in
   getGraph fullAnalysis
 
 -- First test: Push + Pop matching stack element
