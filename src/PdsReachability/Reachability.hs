@@ -40,6 +40,8 @@ data Analysis nt element dynPopFun where
     (Ord nt, Ord element, Ord dynPopFun, Eq nt, Eq element, Eq dynPopFun) =>
     {
       doDynPop :: (dynPopFun -> element -> [Path element dynPopFun]),
+      -- TODO: add the untargeted version of the doDynPop
+      -- (targetlessDynPopFun -> element -> ([(Path, Terminus nt element dynPopFun)]))
       graph :: Graph nt element dynPopFun,
       workQueue :: WorkQueue nt element dynPopFun,
       activeNodes :: ActiveNodes nt element dynPopFun,

@@ -63,6 +63,8 @@ data StackAction element dynPopFun
   | DynamicPop dynPopFun
   | Nop deriving (Show, Eq, Ord)
 
+-- TODO: Add untargeted dynamic pops as a separate data type
+
 -- This function unpacks the GADT so that the functions required by the
 -- constraints are exposed
 withGraph ::
