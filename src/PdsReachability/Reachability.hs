@@ -7,7 +7,6 @@ module PdsReachability.Reachability where
 import AST.Ast
 import Data.Function
 import PdsReachability.Structure
-import Utils.NondeterminismMonad as ND
 import qualified Data.Either as E
 import qualified Data.List as L
 import qualified Data.Set as S
@@ -119,28 +118,30 @@ addEdgeFunction ef analysis =
   let wq = getWorkQueue analysis in
   let history = getHistory analysis in
   let actives = S.toList $ getActiveNodes analysis in
-  let activeMND = ND.pick actives in
-  let newEdges = L.concat $ ND.toList $
+  let newEdges = L.concat $
         do
-          node <- activeMND
+          node <- actives
           return $ ef node
   in
-  let newActives = S.fromList $
-        MB.mapMaybe (\(Edge src _ _) ->
-                       case src of IntermediateNode _ _ -> Just src
-                                   otherwise -> Nothing
-                    ) newEdges in
   let newEdgesSet = S.fromList newEdges in
-  let finalWq = S.foldl
+  let wq' = S.foldl
         (\acc -> \e ->
           if S.member e history then acc else
             Q.pushBack acc e) wq newEdgesSet
   in
-  let finalHistory = S.foldl
+  let history' = S.foldl
         (\acc -> \e -> S.insert e acc) history newEdgesSet
   in
-  analysis { workQueue = finalWq,
-             history = finalHistory,
+  -- TODO: Check whether we have the invariance that all edges added from
+  -- edge functions (directly) have active source nodes.
+  let newActives = S.fromList $
+        MB.mapMaybe (\(Edge src _ _) ->
+                       case src of IntermediateNode _ _ -> Just src
+                                   otherwise -> Nothing
+                    ) newEdges
+  in
+  analysis { workQueue = wq',
+             history = history',
              activeNodes = S.union newActives (getActiveNodes analysis),
              edgeFunctions = ef : (getEdgeFunctions analysis)
             }
@@ -159,8 +160,13 @@ addActiveNode newNode analysis =
     let activeNodes' = S.insert newNode activeNodes in
     let waitedWork = M.findWithDefault S.empty newNode (getWaitlist analysis) in
     let waitlist' = M.delete newNode (getWaitlist analysis) in
-    let history' = S.foldl (\acc -> \e -> S.insert e acc) (getHistory analysis) waitedWork in
-    let wq' = S.foldl Q.pushBack (getWorkQueue analysis) waitedWork in
+    let edgesFromEf =
+          L.foldl (\acc -> \f ->
+                    S.union (S.fromList (f newNode)) acc)
+                    S.empty (getEdgeFunctions analysis) in
+    let newWork = S.union waitedWork edgesFromEf in
+    let history' = S.foldl (\acc -> \e -> S.insert e acc) (getHistory analysis) newWork in
+    let wq' = S.foldl Q.pushBack (getWorkQueue analysis) newWork in
     let analysis' = analysis { workQueue = wq',
                                activeNodes = activeNodes',
                                history = history',
@@ -256,16 +262,16 @@ closureStep analysis =
                           (Q.pushBack accWq newEdge, S.insert newEdge accHistory))
                       (wq1, history1) nopDests in
                 -- having live source nodes (or can we assume the path will always be alive?)
-                let dynPopDestsMnd = pick $ S.toList $ dynPopDests in
+                let dynPopDestsMnd = S.toList $ dynPopDests in
                 let rawEdgesLsts =
                       do
                         (dest, f) <- dynPopDestsMnd
                         let pathLst = doDynPop f se
-                        singlePath <- ND.pick pathLst
+                        singlePath <- pathLst
                         return $ pathToEdges singlePath n1 dest
                 in
                 {-- NOTE: Marking the IntermediateNodes as active --}
-                let fullEdgesLst = concat $ ND.toList rawEdgesLsts in
+                let fullEdgesLst = concat rawEdgesLsts in
                 let newActives = S.fromList $
                       MB.mapMaybe (\(Edge src _ _) ->
                                      case src of IntermediateNode _ _ -> Just src
@@ -330,16 +336,15 @@ closureStep analysis =
                            workQueue = finalWq }
               DynamicPop f ->
                 let pushSrcsAndElms = S.toList $ findPushEdgesByDest n1 g in
-                let pushSrcsAndElmsMnd = ND.pick pushSrcsAndElms in
                 let rawEdgesLsts =
                       do
-                        (src, elm) <- pushSrcsAndElmsMnd
+                        (src, elm) <- pushSrcsAndElms
                         let pathLst = doDynPop f elm
-                        singlePath <- ND.pick pathLst
+                        singlePath <- pathLst
                         return $ pathToEdges singlePath src n2
                 in
                 {-- NOTE: Marking the IntermediateNodes as active --}
-                let fullEdgesLst = concat $ ND.toList rawEdgesLsts in
+                let fullEdgesLst = concat rawEdgesLsts in
                 let newActives = S.fromList $
                       MB.mapMaybe (\(Edge src _ _) ->
                                      case src of IntermediateNode _ _ -> Just src

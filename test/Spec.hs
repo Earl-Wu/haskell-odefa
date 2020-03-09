@@ -4,12 +4,13 @@ import Test.Tasty
 import Test.Tasty.HUnit
 
 import qualified Data.Set as S
+import Data.Function
 import PdsReachability.Reachability
 import PdsReachability.Structure
 
-
 type TestAnalysis = Analysis String String DynPopFun
 type TestActives = ActiveNodes String String DynPopFun
+type TestEdgeFun = EdgeFunction String String DynPopFun
 type TestGraph = Graph String String DynPopFun
 type TestEdge = Edge String String DynPopFun
 type TestNode = Node String String DynPopFun
@@ -25,6 +26,12 @@ doDynPop1 dpf se =
     DynPopFun1 -> [[Push "II", Push "IV", Push "VI", Push se, Push "I"]]
     DynPopFun2 -> [[Push "1", Push "1", Push "1"]]
 
+edgeFun1 :: TestEdgeFun
+edgeFun1 n =
+  case n of
+    UserNode "a" -> [Edge (UserNode "b") (Pop "x") (UserNode "c")]
+    otherwise -> []
+
 main :: IO ()
 main = do
   defaultMain (testGroup "Our Library Tests"
@@ -36,7 +43,10 @@ main = do
      biggerTest1,
      dynPopTest1,
      dynPopTest2,
-     activeNodesTest1])
+     activeNodesTest1,
+     addEdgeFunBeforeActiveTest,
+     addEdgeFunAfterActiveTest,
+     extraWorkTest])
 
 setActiveNodes ::
  TestActives ->
@@ -44,6 +54,13 @@ setActiveNodes ::
  TestAnalysis
 setActiveNodes actives analysis =
   S.foldl (flip addActiveNode) analysis actives
+
+setEdgeFunctions ::
+ [TestEdgeFun] ->
+ TestAnalysis ->
+ TestAnalysis
+setEdgeFunctions efs analysis =
+  foldl (flip addEdgeFunction) analysis efs
 
 -- fullAnalysis :: TestGraph -> TestAnalysis
 -- fullAnalysis g =
@@ -56,7 +73,7 @@ graphClosure :: TestGraph -> TestGraph
 graphClosure g =
   let edges = getEdges g in
   let actives = S.map (\(Edge n1 _ _) -> n1) edges in
-  let preparedAnalysis = (emptyAnalysis doDynPop1) { activeNodes = actives } in
+  let preparedAnalysis = setActiveNodes actives (emptyAnalysis doDynPop1) in
   let initialAnalysis = S.foldl (\acc -> \e -> updateAnalysis e acc) preparedAnalysis edges in
   let fullAnalysis = fullClosure initialAnalysis in
   getGraph fullAnalysis
@@ -74,6 +91,47 @@ graphClosureWithActives actives g =
   let edges = getEdges g in
   let initialAnalysis = S.foldl (\acc -> \e -> updateAnalysis e acc) (emptyAnalysis doDynPop1) edges in
   let preparedAnalysis = setActiveNodes actives initialAnalysis in
+  let fullAnalysis = fullClosure preparedAnalysis in
+  getGraph fullAnalysis
+
+-- NOTE: Add Edge Function when the nodes aren't active
+graphClosureWithEdgeFun1 :: [TestEdgeFun] -> TestGraph -> TestGraph
+graphClosureWithEdgeFun1 efs g =
+  let edges = getEdges g in
+  let actives = S.map (\(Edge n1 _ _) -> n1) edges in
+  let preparedAnalysis =
+        (emptyAnalysis doDynPop1)
+        & setEdgeFunctions efs
+        & setActiveNodes actives
+  in
+  let initialAnalysis = S.foldl (\acc -> \e -> updateAnalysis e acc) preparedAnalysis edges in
+  let fullAnalysis = fullClosure initialAnalysis in
+  getGraph fullAnalysis
+
+  -- NOTE: Add Edge Function after the nodes are active
+graphClosureWithEdgeFun2 :: [TestEdgeFun] -> TestGraph -> TestGraph
+graphClosureWithEdgeFun2 efs g =
+  let edges = getEdges g in
+  let actives = S.map (\(Edge n1 _ _) -> n1) edges in
+  let preparedAnalysis =
+        (emptyAnalysis doDynPop1)
+        & setActiveNodes actives
+  in
+  let initialAnalysis =
+        S.foldl (\acc -> \e -> updateAnalysis e acc) preparedAnalysis edges
+        & setEdgeFunctions efs
+  in
+  let fullAnalysis = fullClosure initialAnalysis in
+  getGraph fullAnalysis
+
+graphClosureWithFullSpec :: TestActives -> [TestEdgeFun] -> TestGraph -> TestGraph
+graphClosureWithFullSpec actives efs g =
+  let edges = getEdges g in
+  let initialAnalysis = S.foldl (\acc -> \e -> updateAnalysis e acc) (emptyAnalysis doDynPop1) edges in
+  let preparedAnalysis =
+        setActiveNodes actives initialAnalysis
+        & setEdgeFunctions efs
+  in
   let fullAnalysis = fullClosure preparedAnalysis in
   getGraph fullAnalysis
 
@@ -326,3 +384,78 @@ activeNodesTestInit1 = graphFromEdges activeNodesTestSetInit1
 activeNodesTest1 :: TestTree
 activeNodesTest1 = testCase "Testing activeNodes algorithm"
   (assertEqual "Should have one new edge" activeNodesTestRes1 (graphClosureWithActives (S.fromList [UserNode "a"]) activeNodesTestInit1))
+
+addEdgeFunBeforeActive :: S.Set TestEdge
+addEdgeFunBeforeActive =
+  S.fromList
+    [Edge (UserNode "a") (Push "x") (UserNode "b"),
+     Edge (UserNode "b") (Pop "x") (UserNode "c"),
+     Edge (UserNode "a") Nop (UserNode "c")
+    ]
+
+addEdgeFunBeforeActiveTestRes :: TestGraph
+addEdgeFunBeforeActiveTestRes = graphFromEdges addEdgeFunBeforeActive
+
+addEdgeFunBeforeActiveTestSetInit :: S.Set TestEdge
+addEdgeFunBeforeActiveTestSetInit =
+  S.fromList
+    [Edge (UserNode "a") (Push "x") (UserNode "b")
+    ]
+
+addEdgeFunBeforeActiveTestInit :: TestGraph
+addEdgeFunBeforeActiveTestInit = graphFromEdges addEdgeFunBeforeActiveTestSetInit
+
+addEdgeFunBeforeActiveTest :: TestTree
+addEdgeFunBeforeActiveTest = testCase "Testing edgeFunction algorithm"
+  (assertEqual "Should have one new edge" addEdgeFunBeforeActiveTestRes
+  (graphClosureWithEdgeFun1 [edgeFun1] addEdgeFunBeforeActiveTestInit))
+
+addEdgeFunAfterActive :: S.Set TestEdge
+addEdgeFunAfterActive =
+  S.fromList
+    [Edge (UserNode "a") (Push "x") (UserNode "b"),
+     Edge (UserNode "b") (Pop "x") (UserNode "c"),
+     Edge (UserNode "a") Nop (UserNode "c")
+    ]
+
+addEdgeFunAfterActiveTestRes :: TestGraph
+addEdgeFunAfterActiveTestRes = graphFromEdges addEdgeFunAfterActive
+
+addEdgeFunAfterActiveTestSetInit :: S.Set TestEdge
+addEdgeFunAfterActiveTestSetInit =
+  S.fromList
+    [Edge (UserNode "a") (Push "x") (UserNode "b")
+    ]
+
+addEdgeFunAfterActiveTestInit :: TestGraph
+addEdgeFunAfterActiveTestInit = graphFromEdges addEdgeFunAfterActiveTestSetInit
+
+addEdgeFunAfterActiveTest :: TestTree
+addEdgeFunAfterActiveTest = testCase "Testing edgeFunction algorithm"
+  (assertEqual "Should have one new edge" addEdgeFunAfterActiveTestRes
+  (graphClosureWithEdgeFun2 [edgeFun1] addEdgeFunAfterActiveTestInit))
+
+extraWork :: S.Set TestEdge
+extraWork =
+  S.fromList
+    [Edge (UserNode "a") (Push "x") (UserNode "b"),
+     Edge (UserNode "b") (Pop "x") (UserNode "c")
+    ]
+
+extraWorkTestRes :: TestGraph
+extraWorkTestRes = graphFromEdges extraWork
+
+extraWorkTestSetInit :: S.Set TestEdge
+extraWorkTestSetInit =
+  S.fromList
+    [Edge (UserNode "a") (Push "x") (UserNode "b"),
+     Edge (UserNode "b") (Pop "x") (UserNode "c")
+    ]
+
+extraWorkTestInit :: TestGraph
+extraWorkTestInit = graphFromEdges extraWorkTestSetInit
+
+extraWorkTest :: TestTree
+extraWorkTest = testCase "Testing algorithm for doing unnecessary work"
+  (assertEqual "Should have no new edge" extraWorkTestRes
+  (graphClosureWithFullSpec S.empty [edgeFun1] extraWorkTestInit))
