@@ -1,4 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE GADTs #-}
@@ -7,7 +9,7 @@ module PdsReachability.Structure
 (
   StackAction(..),
   Edge(..),
-  Node(..),
+  InternalNode(..),
   Graph,
   emptyGraph,
   graphFromEdges,
@@ -24,73 +26,100 @@ module PdsReachability.Structure
 
 import AST.Ast
 import Data.Function
+import PdsReachability.Specification
 import qualified Data.Set as S
 import qualified Data.Map as M
 
-data Graph nt element dynPopFun where
-   Graph :: (Ord nt, Ord element, Ord dynPopFun, Eq nt, Eq element, Eq dynPopFun) =>
+-- NOTE: Terminus: InternalNode and UntargetedPopAction
+
+data Graph a where
+   Graph :: (Ord (Node a), Ord (Element a), Ord (DynPop a), Ord (UntargetedPop a), Eq (Node a), Eq (Element a), Eq (DynPop a), Eq (UntargetedPop a)) =>
             { -- A dictionary stroing all the edges in the graph
-              allEdges :: S.Set (Edge nt element dynPopFun),
+              allEdges :: S.Set (Edge a),
+              -- A dictionary stroing all the untargeted pop edges in the graph
+              allUntargetedPopEdges :: S.Set (UntargetedPopEdge a),
               -- A dictionary storing pop edges, key - edge src and pop element, val - edge dest)
-              popEdgesBySourceAndElement :: M.Map (Node nt element dynPopFun, element) (S.Set (Node nt element dynPopFun)),
+              popEdgesBySourceAndElement :: M.Map (InternalNode a, Element a) (S.Set (InternalNode a)),
               -- A dictionary storing nop edges, key - edge src, val - edge dest)
-              nopEdgesBySource :: M.Map (Node nt element dynPopFun) (S.Set (Node nt element dynPopFun)),
-              -- A dictionary string nop edges, key - edge dest, val - edge src
-              nopEdgesByDest :: M.Map (Node nt element dynPopFun) (S.Set (Node nt element dynPopFun)),
-              -- A dictionary string push edges, key - (edge dest, push element), val - edge src
-              pushEdgesByDestAndElement :: M.Map ((Node nt element dynPopFun), element) (S.Set (Node nt element dynPopFun)),
-              -- A dictionary string push edges, key - edge dest, val - (edge src, push element)
-              pushEdgesByDest :: M.Map (Node nt element dynPopFun) (S.Set ((Node nt element dynPopFun), element)),
-              -- A dictionary string push edges, key - edge src, val - (edge dest, push element)
-              pushEdgesBySource :: M.Map (Node nt element dynPopFun) (S.Set ((Node nt element dynPopFun), element)),
-              -- A dictionary string dynamic pop edges, key - edge src, val - (edge dest, dynamic action)
-              dynPopEdgesBySource :: M.Map (Node nt element dynPopFun) (S.Set ((Node nt element dynPopFun), dynPopFun))
-            } -> Graph nt element dynPopFun
-deriving instance (Show nt, Show element, Show dynPopFun) => (Show (Graph nt element dynPopFun))
-deriving instance (Eq (Graph nt element dynPopFun))
-deriving instance (Ord (Graph nt element dynPopFun))
+              nopEdgesBySource :: M.Map (InternalNode a) (S.Set (InternalNode a)),
+              -- A dictionary storing nop edges, key - edge dest, val - edge src
+              nopEdgesByDest :: M.Map (InternalNode a) (S.Set (InternalNode a)),
+              -- A dictionary storing push edges, key - (edge dest, push element), val - edge src
+              pushEdgesByDestAndElement :: M.Map ((InternalNode a), Element a) (S.Set (InternalNode a)),
+              -- A dictionary storing push edges, key - edge dest, val - (edge src, push element)
+              pushEdgesByDest :: M.Map (InternalNode a) (S.Set ((InternalNode a), Element a)),
+              -- A dictionary storing push edges, key - edge src, val - (edge dest, push element)
+              pushEdgesBySource :: M.Map (InternalNode a) (S.Set ((InternalNode a), Element a)),
+              -- A dictionary storing dynamic(UntargetedPop a) pop edges, key - edge src, val - (edge dest, dynamic action)
+              dynPopEdgesBySource :: M.Map (InternalNode a) (S.Set ((InternalNode a), DynPop a)),
+              -- A dictionary storing untargeted pop edges, key - edge src, val - Untargeted Pop action
+              untargetedPopBySrc :: M.Map (InternalNode a) (S.Set (UntargetedPop a))
+            } -> Graph a
+deriving instance (Show (Node a), Show (Element a), Show (DynPop a), Show (UntargetedPop a)) => (Show (Graph a))
+deriving instance (Eq (Graph a))
+deriving instance (Ord (Graph a))
 
-data Node nt element dynPopFun
-  = UserNode nt
-  | IntermediateNode [StackAction element dynPopFun] (Node nt element dynPopFun) deriving (Show, Eq, Ord)
+data InternalNode a
+  = UserNode (Node a)
+  | IntermediateNode [StackAction a] (InternalNode a)
+deriving instance (Show (Node a), Show (Element a), Show (DynPop a)) => (Show (InternalNode a))
+deriving instance (Ord (Node a), Ord (Element a), Ord (DynPop a)) => (Ord (InternalNode a))
+deriving instance (Eq (Node a), Eq (Element a), Eq (DynPop a)) => (Eq (InternalNode a))
 
-data Edge nt element dynPopFun
-  = Edge (Node nt element dynPopFun) (StackAction element dynPopFun) (Node nt element dynPopFun) deriving (Show, Eq, Ord)
+data Edge a
+  = Edge (InternalNode a) (StackAction a) (InternalNode a)
+deriving instance (Show (Node a), Show (Element a), Show (DynPop a)) => (Show (Edge a))
+deriving instance (Ord (Node a), Ord (Element a), Ord (DynPop a)) => (Ord (Edge a))
+deriving instance (Eq (Node a), Eq (Element a), Eq (DynPop a)) => (Eq (Edge a))
 
-data StackAction element dynPopFun
-  = Push element
-  | Pop element
-  | DynamicPop dynPopFun
-  | Nop deriving (Show, Eq, Ord)
+data UntargetedPopEdge a
+  = UntargetedPopEdge (InternalNode a) (UntargetedPopAction a)
+deriving instance (Show (Node a), Show (Element a), Show (DynPop a), Show (UntargetedPop a)) => (Show (UntargetedPopEdge a))
+deriving instance (Ord (Node a), Ord (Element a), Ord (DynPop a), Ord (UntargetedPop a)) => (Ord (UntargetedPopEdge a))
+deriving instance (Eq (Node a), Eq (Element a), Eq (DynPop a), Eq (UntargetedPop a)) => (Eq (UntargetedPopEdge a))
 
--- TODO: Add untargeted dynamic pops as a separate data type
+data UntargetedPopAction a = UntargetedPopAction (UntargetedPop a)
+deriving instance (Show (Node a), Show (Element a), Show (DynPop a), Show (UntargetedPop a)) => (Show (UntargetedPopAction a))
+deriving instance (Ord (Node a), Ord (Element a), Ord (DynPop a), Ord (UntargetedPop a)) => (Ord (UntargetedPopAction a))
+deriving instance (Eq (Node a), Eq (Element a), Eq (DynPop a), Eq (UntargetedPop a)) => (Eq (UntargetedPopAction a))
 
--- This function unpacks the GADT so that the functions required by the
--- constraints are exposed
+data StackAction a
+  = Push (Element a)
+  | Pop (Element a)
+  | DynamicPop (DynPop a)
+  | Nop
+deriving instance (Show (Node a), Show (Element a), Show (DynPop a)) => (Show (StackAction a))
+deriving instance (Ord (Node a), Ord (Element a), Ord (DynPop a)) => (Ord (StackAction a))
+deriving instance (Eq (Node a), Eq (Element a), Eq (DynPop a)) => (Eq (StackAction a))
+
+-- -- This function unpacks the GADT so that the functions required by the
+-- -- constraints are exposed
 withGraph ::
-  Graph nt element dynPopFun ->
-  ((Eq nt, Eq element, Eq dynPopFun, Ord nt, Ord element, Ord dynPopFun) => () -> a) ->
-  a
+  Graph a ->
+  ((Ord (Node a), Ord (Element a), Ord (DynPop a), Ord (UntargetedPop a), Eq (Node a), Eq (Element a), Eq (DynPop a), Eq (UntargetedPop a)) => () -> b) ->
+  b
 withGraph g f =
   case g of
     Graph {} -> f ()
 
 emptyGraph ::
-  (Ord nt, Ord element, Ord dynPopFun, Eq nt, Eq element, Eq dynPopFun) =>
-  Graph nt element dynPopFun
+  (Ord (Node a), Ord (Element a), Ord (DynPop a), Ord (UntargetedPop a), Eq (Node a), Eq (Element a), Eq (DynPop a), Eq (UntargetedPop a)) =>
+  Graph a
 emptyGraph
   = Graph { allEdges = S.empty,
+            allUntargetedPopEdges = S.empty,
             popEdgesBySourceAndElement = M.empty,
             nopEdgesBySource = M.empty,
             nopEdgesByDest = M.empty,
             pushEdgesByDestAndElement = M.empty,
             pushEdgesByDest = M.empty,
             pushEdgesBySource = M.empty,
-            dynPopEdgesBySource = M.empty
+            dynPopEdgesBySource = M.empty,
+            untargetedPopBySrc = M.empty
           }
 
-graphFromEdges :: (Ord nt, Ord element, Ord dynPopFun) =>
-  S.Set (Edge nt element dynPopFun) -> Graph nt element dynPopFun
+graphFromEdges :: (Ord (Node a), Ord (Element a), Ord (DynPop a), Ord (UntargetedPop a)) =>
+  S.Set (Edge a) -> Graph a
 graphFromEdges edgeSet =
   S.foldl (\acc -> \e -> addEdge e acc) emptyGraph edgeSet
 
@@ -101,10 +130,7 @@ alterMap m (k, v) =
     then M.adjust (\s -> S.insert v s) k m
     else M.insert k (S.singleton v) m
 
-addEdge ::
-  Edge nt element dynPopFun ->
-  Graph nt element dynPopFun ->
-  Graph nt element dynPopFun
+addEdge :: Edge a -> Graph a -> Graph a
 addEdge (e@(Edge n1 sa n2)) g =
   withGraph g $ \() ->
   let newEdges = S.insert e (allEdges g) in
@@ -147,13 +173,24 @@ addEdge (e@(Edge n1 sa n2)) g =
       in
       newGraph
 
+addUntargetedPopEdge :: UntargetedPopEdge a -> Graph a -> Graph a
+addUntargetedPopEdge (upe@(UntargetedPopEdge n upa)) g =
+  withGraph g $ \() ->
+  let newEdges = S.insert upe (allUntargetedPopEdges g) in
+  let UntargetedPopAction f = upa in
+  let ogMap = untargetedPopBySrc g in
+  let newMap = alterMap ogMap (n, f) in
+  let newGraph = g { allUntargetedPopEdges = newEdges,
+                     untargetedPopBySrc = newMap }
+  in
+  newGraph
 
-getEdges :: Graph nt element dynPopFun -> S.Set (Edge nt element dynPopFun)
+getEdges :: Graph a -> S.Set (Edge a)
 getEdges g =
   allEdges g
 
 findPopEdgesBySourceAndElement ::
-  (Node nt element dynPopFun, element) -> Graph nt element dynPopFun -> S.Set (Node nt element dynPopFun)
+  (InternalNode a, Element a) -> Graph a -> S.Set (InternalNode a)
 findPopEdgesBySourceAndElement (n, e) g =
   withGraph g $ \() ->
   let entry = M.lookup (n, e) (popEdgesBySourceAndElement g) in
@@ -162,7 +199,7 @@ findPopEdgesBySourceAndElement (n, e) g =
     Nothing -> S.empty
 
 findNopEdgesBySource ::
-  (Node nt element dynPopFun) -> Graph nt element dynPopFun -> S.Set (Node nt element dynPopFun)
+  (InternalNode a) -> Graph a -> S.Set (InternalNode a)
 findNopEdgesBySource n g =
   withGraph g $ \() ->
   let entry = M.lookup n (nopEdgesBySource g) in
@@ -171,7 +208,7 @@ findNopEdgesBySource n g =
     Nothing -> S.empty
 
 findNopEdgesByDest ::
-  (Node nt element dynPopFun) -> Graph nt element dynPopFun -> S.Set (Node nt element dynPopFun)
+  (InternalNode a) -> Graph a -> S.Set (InternalNode a)
 findNopEdgesByDest n g =
   withGraph g $ \() ->
   let entry = M.lookup n (nopEdgesByDest g) in
@@ -180,7 +217,7 @@ findNopEdgesByDest n g =
     Nothing -> S.empty
 
 findPushEdgesByDestAndElement ::
-  (Node nt element dynPopFun, element) -> Graph nt element dynPopFun -> S.Set (Node nt element dynPopFun)
+  (InternalNode a, Element a) -> Graph a -> S.Set (InternalNode a)
 findPushEdgesByDestAndElement (n, e) g =
   withGraph g $ \() ->
   let entry = M.lookup (n, e) (pushEdgesByDestAndElement g) in
@@ -189,7 +226,7 @@ findPushEdgesByDestAndElement (n, e) g =
     Nothing -> S.empty
 
 findPushEdgesByDest ::
-  (Node nt element dynPopFun) -> Graph nt element dynPopFun -> S.Set (Node nt element dynPopFun, element)
+  (InternalNode a) -> Graph a -> S.Set (InternalNode a, Element a)
 findPushEdgesByDest n g =
   withGraph g $ \() ->
   let entry = M.lookup n (pushEdgesByDest g) in
@@ -198,7 +235,7 @@ findPushEdgesByDest n g =
     Nothing -> S.empty
 
 findPushEdgesBySource ::
-  (Node nt element dynPopFun) -> Graph nt element dynPopFun -> S.Set (Node nt element dynPopFun, element)
+  (InternalNode a) -> Graph a -> S.Set (InternalNode a, Element a)
 findPushEdgesBySource n g =
   withGraph g $ \() ->
   let entry = M.lookup n (pushEdgesBySource g) in
@@ -207,10 +244,19 @@ findPushEdgesBySource n g =
     Nothing -> S.empty
 
 findDynPopEdgesBySource ::
-  (Node nt element dynPopFun) -> Graph nt element dynPopFun -> S.Set (Node nt element dynPopFun, dynPopFun)
+  (InternalNode a) -> Graph a -> S.Set (InternalNode a, DynPop a)
 findDynPopEdgesBySource n g =
   withGraph g $ \() ->
   let entry = M.lookup n (dynPopEdgesBySource g) in
+  case entry of
+    Just s -> s
+    Nothing -> S.empty
+
+findUntargetedPopEdgesBySource ::
+  (InternalNode a) -> Graph a -> S.Set (UntargetedPop a)
+findUntargetedPopEdgesBySource n g =
+  withGraph g $ \() ->
+  let entry = M.lookup n (untargetedPopBySrc g) in
   case entry of
     Just s -> s
     Nothing -> S.empty
