@@ -17,41 +17,25 @@ import qualified Data.Map as M
 import qualified Data.Maybe as MB
 import qualified Data.Dequeue as Q
 
--- instance Specification DDPAPDR where
---     type Node DDPAPDR = CFGNode
---     type Element DDPAPDR = DDPAStackElement
---     type DynPopFun DDPAPDR = DDPAPopFuns
---     doDynPop = ddpaDynamicPops
+data WorkQueue a = WorkQueue (Q.BankersDequeue (Edge a))
+deriving instance (SpecIs Show a) => (Show (WorkQueue a))
 
-data WorkQueue a where
-  WorkQueue :: (Specification a) => Q.BankersDequeue (Edge a) -> WorkQueue a
-deriving instance (Show (Node a), Show (Element a), Show (DynPop a), Show (UntargetedPop a)) => (Show (WorkQueue a))
+data Path a = Path [StackAction a]
+deriving instance (SpecIs Show a) => (Show (Path a))
 
-data Path a where
-  Path :: (Specification a) => [StackAction a] -> Path a
-deriving instance (Show (Node a), Show (Element a), Show (DynPop a), Show (UntargetedPop a)) => (Show (Path a))
+data History a = History (S.Set (Edge a))
+deriving instance (SpecIs Show a) => (Show (History a))
 
-data History a where
-  History :: (Specification a) => S.Set (Edge a) -> History a
-deriving instance (Show (Node a), Show (Element a), Show (DynPop a), Show (UntargetedPop a)) => (Show (History a))
+data ActiveNodes a = ActiveNodes (S.Set (InternalNode a))
+deriving instance (SpecIs Show a) => (Show (ActiveNodes a))
 
-data ActiveNodes a where
-  ActiveNodes :: (Specification a) => S.Set (InternalNode a) -> ActiveNodes a
-deriving instance (Show (Node a), Show (Element a), Show (DynPop a), Show (UntargetedPop a)) => (Show (ActiveNodes a))
+data EdgeFunction a = EdgeFunction (InternalNode a -> [(Path a, InternalNode a)])
 
-data EdgeFunction a where
-  EdgeFunction ::
-    (Specification a) => (InternalNode a -> [(Path a, InternalNode a)]) -> EdgeFunction a
+data Waitlist a = Waitlist (M.Map (InternalNode a) (S.Set (Edge a)))
 
-data Waitlist a where
-  Waitlist ::
-    (Specification a) => (M.Map (InternalNode a) (S.Set (Edge a))) -> Waitlist a
-
-data Analysis a where
-   Analysis ::
-    (Specification a, Ord (Node a), Ord (Element a), Ord (DynPop a), Ord (UntargetedPop a), Eq (Node a), Eq (Element a), Eq (DynPop a), Eq (UntargetedPop a)) =>
-    {
-      doDynPop :: (DynPop a -> Element a -> [Path a]),
+data Analysis a =
+  Analysis
+    { doDynPop :: (DynPop a -> Element a -> [Path a]),
       -- TODO: add the untargeted version of the doDynPop
       -- doTargetlessDynPop :: (targetlessDynPopFun -> element -> ([(Path, InternalNode a)]))
       graph :: Graph a,
@@ -60,24 +44,13 @@ data Analysis a where
       history :: History a,
       waitlist :: Waitlist a,
       edgeFunctions :: [EdgeFunction a]
-    } -> Analysis a
+    }
 
 -- Cannot derive show for doDynPop so have to manually roll out this function
-instance (Show (Node a), Show (Element a), Show (DynPop a), Show (UntargetedPop a)) =>
-  Show (Analysis a) where
+instance (SpecIs Show a) => Show (Analysis a) where
   show a = "Analysis Graph: " ++ show (graph a) ++ ";\n" ++
     "WorkQueue: " ++ show (workQueue a) ++ ";\n" ++
     "ActiveNodes: " ++ show (activeNodes a) ++ ";\n"
-
--- This function unpacks the GADT so that the functions required by the
--- constraints are exposed
-withAnalysis ::
-  Analysis a ->
-  ((Specification a, Ord (Node a), Ord (Element a), Ord (DynPop a), Ord (UntargetedPop a), Eq (Node a), Eq (Element a), Eq (DynPop a), Eq (UntargetedPop a)) => () -> b) ->
-  b
-withAnalysis g f =
-  case g of
-    Analysis {} -> f ()
 
 getGraph :: Analysis a -> Graph a
 getGraph analysis = graph analysis
@@ -85,29 +58,22 @@ getGraph analysis = graph analysis
 getWorkQueue :: Analysis a -> WorkQueue a
 getWorkQueue analysis = workQueue analysis
 
-getDynPop ::
-  Analysis a -> (DynPop a -> Element a -> [Path a])
+getDynPop :: Analysis a -> (DynPop a -> Element a -> [Path a])
 getDynPop analysis = doDynPop analysis
 
-getActiveNodes ::
-  Analysis a -> ActiveNodes a
+getActiveNodes :: Analysis a -> ActiveNodes a
 getActiveNodes analysis = activeNodes analysis
 
-getHistory ::
-  Analysis a -> History a
+getHistory :: Analysis a -> History a
 getHistory analysis = history analysis
 
-getWaitlist ::
-  Analysis a -> Waitlist a
+getWaitlist :: Analysis a -> Waitlist a
 getWaitlist analysis = waitlist analysis
 
-getEdgeFunctions ::
-  Analysis a -> [EdgeFunction a]
+getEdgeFunctions :: Analysis a -> [EdgeFunction a]
 getEdgeFunctions analysis = edgeFunctions analysis
 
-emptyAnalysis :: (Specification a, Ord (Node a), Ord (Element a), Ord (DynPop a), Ord (UntargetedPop a)) =>
-  (DynPop a -> Element a -> [Path a]) ->
-  Analysis a
+emptyAnalysis :: (DynPop a -> Element a -> [Path a]) -> Analysis a
 emptyAnalysis doDynPop =
   Analysis { doDynPop = doDynPop,
              graph = emptyGraph,
@@ -118,10 +84,8 @@ emptyAnalysis doDynPop =
              edgeFunctions = []
            }
 
-addEdgeFunction ::
-  EdgeFunction a -> Analysis a -> Analysis a
+addEdgeFunction :: (Spec a) => EdgeFunction a -> Analysis a -> Analysis a
 addEdgeFunction (rawEf@(EdgeFunction ef)) analysis =
-  withAnalysis analysis $ \() ->
   let WorkQueue wq = getWorkQueue analysis in
   let History history = getHistory analysis in
   let ActiveNodes activeSet = getActiveNodes analysis in
@@ -148,9 +112,8 @@ addEdgeFunction (rawEf@(EdgeFunction ef)) analysis =
                 edgeFunctions = rawEf : (getEdgeFunctions analysis)
               }
 
-addActiveNode :: InternalNode a -> Analysis a -> Analysis a
+addActiveNode :: (Spec a) => InternalNode a -> Analysis a -> Analysis a
 addActiveNode newNode analysis =
-  withAnalysis analysis $ \() ->
   let ActiveNodes activeNodes = getActiveNodes analysis in
   let WorkQueue wq = getWorkQueue analysis in
   let History history = getHistory analysis in
@@ -179,8 +142,7 @@ addActiveNode newNode analysis =
     in
     propagateLiveness newNode analysis'
 
-pathToEdges ::
-  Path a -> InternalNode a -> InternalNode a -> [Edge a]
+pathToEdges :: Path a -> InternalNode a -> InternalNode a -> [Edge a]
 pathToEdges (Path path) src dest =
   case path of
     [] -> [Edge src Nop dest]
@@ -198,10 +160,8 @@ pathToEdges (Path path) src dest =
       loop tl [Edge src hd firstImdNode] firstImdNode
 
 -- TODO: Leave comments to explain the algorithm
-propagateLiveness ::
-  InternalNode a -> Analysis a -> Analysis a
+propagateLiveness :: (Spec a) => InternalNode a -> Analysis a -> Analysis a
 propagateLiveness node analysis =
-  withAnalysis analysis $ \() ->
   let g = getGraph analysis in
   let ActiveNodes activeNodes = getActiveNodes analysis in
   -- Liveness is only propagated through push and nop edges
@@ -212,9 +172,8 @@ propagateLiveness node analysis =
   in
   S.foldl (\acc -> \n -> addActiveNode n acc) analysis connectedNonActiveNodes
 
-closureStep :: Analysis a -> Analysis a
+closureStep :: (Spec a) => Analysis a -> Analysis a
 closureStep analysis =
-  withAnalysis analysis $ \() ->
   -- If the workqueue is empty, we can simply return the analysis unchanged
   let WorkQueue wq = getWorkQueue analysis in
   if (null wq) then analysis
@@ -358,10 +317,8 @@ closureStep analysis =
                            activeNodes = ActiveNodes (S.union newActives activeNodes)
                          }
 
-fullClosure ::
-  Analysis a -> Analysis a
+fullClosure :: (Spec a) => Analysis a -> Analysis a
 fullClosure analysis =
-  withAnalysis analysis $ \() ->
   let doDynPop = getDynPop analysis in
   let analysis' = closureStep analysis in
   let WorkQueue wq' = getWorkQueue analysis' in
@@ -369,10 +326,8 @@ fullClosure analysis =
 
 -- TODO: Yet another dictionary keeping track of edges in the graph with inactive
 -- sources so that we can dump them into workQueue when their source becomes active
-updateAnalysis ::
-  Edge a -> Analysis a -> Analysis a
+updateAnalysis :: (Spec a) => Edge a -> Analysis a -> Analysis a
 updateAnalysis (e@(Edge src sa dest)) (analysis) =
-  withAnalysis analysis $ \() ->
   -- Check whether the "new" edge is already seen
   let g = getGraph analysis in
   -- If it's already in the graph, it means we have already processed the edge, so skip
