@@ -14,7 +14,6 @@ module PdsReachability.Structure
   GeneralEdges(..),
   Terminus(..),
   UntargetedDynPopEdge(..),
-  UntargetedDynPopAction(..),
   emptyGraph,
   addEdge,
   addUntargetedDynPopEdge,
@@ -36,7 +35,7 @@ import PdsReachability.Specification
 import qualified Data.Set as S
 import qualified Data.Map as M
 
--- NOTE: Terminus: InternalNode and UntargetedDynPopAction
+-- NOTE: Terminus: InternalNode and UntargetedDynPop
 
 data Graph a =
    Graph
@@ -79,19 +78,14 @@ deriving instance (SpecIs Ord a) => (Ord (Edge a))
 deriving instance (SpecIs Show a) => (Show (Edge a))
 
 data UntargetedDynPopEdge a
-  = UntargetedDynPopEdge (InternalNode a) (UntargetedDynPopAction a)
+  = UntargetedDynPopEdge (InternalNode a) (UntargetedDynPop a)
 deriving instance (SpecIs Eq a) => (Eq (UntargetedDynPopEdge a))
 deriving instance (SpecIs Ord a) => (Ord (UntargetedDynPopEdge a))
 deriving instance (SpecIs Show a) => (Show (UntargetedDynPopEdge a))
 
-data UntargetedDynPopAction a = UntargetedDynPopAction (UntargetedDynPop a)
-deriving instance (SpecIs Eq a) => (Eq (UntargetedDynPopAction a))
-deriving instance (SpecIs Ord a) => (Ord (UntargetedDynPopAction a))
-deriving instance (SpecIs Show a) => (Show (UntargetedDynPopAction a))
-
 data Terminus a
   = StaticTerminus (InternalNode a)
-  | DynamicTerminus (UntargetedDynPopAction a)
+  | DynamicTerminus (UntargetedDynPop a)
 deriving instance (SpecIs Eq a) => (Eq (Terminus a))
 deriving instance (SpecIs Ord a) => (Ord (Terminus a))
 deriving instance (SpecIs Show a) => (Show (Terminus a))
@@ -182,9 +176,8 @@ addUntargetedDynPopEdge ::
   (Spec a) => UntargetedDynPopEdge a -> Graph a -> Graph a
 addUntargetedDynPopEdge (upe@(UntargetedDynPopEdge n upa)) g =
   let newEdges = S.insert upe (allUntargetedDynPopEdges g) in
-  let UntargetedDynPopAction f = upa in
   let ogMap = untargetedDynPopBySrc g in
-  let newMap = alterMap ogMap (n, f) in
+  let newMap = alterMap ogMap (n, upa) in
   let newGraph = g { allUntargetedDynPopEdges = newEdges,
                      untargetedDynPopBySrc = newMap }
   in

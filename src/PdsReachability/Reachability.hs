@@ -373,7 +373,7 @@ closureStep analysis =
                          workQueue = WorkQueue finalWq,
                          activeNodes = ActiveNodes (S.union newActives activeNodes)
                        }
-        (UntargetedEdge (e@(UntargetedDynPopEdge n1 (UntargetedDynPopAction pa))), wq') ->
+        (UntargetedEdge (e@(UntargetedDynPopEdge n1 pa)), wq') ->
           let g' = if (S.member e (getUntargetedDynPopEdges g)) then
                      g
                    else
@@ -454,7 +454,7 @@ updateAnalysis edge (analysis) =
           in
           analysis { graph = g',
                      waitlist = Waitlist waitlist' }
-    UntargetedEdge (e@(UntargetedDynPopEdge src (UntargetedDynPopAction pa))) ->
+    UntargetedEdge (e@(UntargetedDynPopEdge src pa)) ->
       if S.member e (getUntargetedDynPopEdges g) then analysis else
         -- If it's not present in the graph, we need to check for its active status
         let WorkQueue wq = getWorkQueue analysis in
