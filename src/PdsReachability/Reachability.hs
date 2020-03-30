@@ -41,7 +41,8 @@ data Analysis a =
     { doTargetedDynPop :: (TargetedDynPop a -> Element a -> [Path a]),
       -- TODO: add the untargeted version of the doTargetedDynPop
       -- TODO: Terminus type is union of InternalNode and UntargetedDynPopEdge
-      doUntargetedDynPop :: (UntargetedDynPop a -> [(Path a, Terminus a)]),
+      doUntargetedDynPop ::
+        (UntargetedDynPop a ->  Element a -> [(Path a, Terminus a)]),
       graph :: Graph a,
       workQueue :: WorkQueue a,
       activeNodes :: ActiveNodes a,
@@ -65,7 +66,8 @@ getWorkQueue analysis = workQueue analysis
 getTargetedDynPop :: Analysis a -> (TargetedDynPop a -> Element a -> [Path a])
 getTargetedDynPop analysis = doTargetedDynPop analysis
 
-getUntargetedDynPop :: Analysis a -> (UntargetedDynPop a -> [(Path a, Terminus a)])
+getUntargetedDynPop ::
+  Analysis a -> (UntargetedDynPop a -> Element a -> [(Path a, Terminus a)])
 getUntargetedDynPop analysis = doUntargetedDynPop analysis
 
 getActiveNodes :: Analysis a -> ActiveNodes a
@@ -82,7 +84,7 @@ getEdgeFunctions analysis = edgeFunctions analysis
 
 emptyAnalysis ::
   (TargetedDynPop a -> Element a -> [Path a]) ->
-  (UntargetedDynPop a -> ([(Path a, Terminus a)])) ->
+  (UntargetedDynPop a ->  Element a -> ([(Path a, Terminus a)])) ->
   Analysis a
 emptyAnalysis doTargetedDynPop doUntargetedDynPop =
   Analysis { doTargetedDynPop = doTargetedDynPop,
@@ -235,30 +237,45 @@ closureStep analysis =
               let popDests = findPopEdgesBySourceAndElement (n2, se) g in
               let nopDests = findNopEdgesBySource n2 g in
               let dynPopDests = findTargetedDynPopEdgesBySource n2 g in
-              -- Since the source of the new edges will definitely be
+              let untargetedDynPops = findUntargetedDynPopEdgesBySource n2 g in
+              -- Closure rule: push + pop ==> nop
               let (wq1, history1) = S.foldl
                     (\(accWq, accHistory) -> \dest ->
                       let newEdge = RegularEdge $ Edge n1 Nop dest in
                       if S.member newEdge accHistory then (accWq, accHistory) else
                         (Q.pushBack accWq newEdge, S.insert newEdge accHistory))
                     (wq', history) popDests in
+              -- Closure rule: push + nop ==> push
               let (wq2, history2) = S.foldl
                     (\(accWq, accHistory) -> \dest ->
                       let newEdge = RegularEdge $ Edge n1 sa dest in
                       if S.member newEdge accHistory then (accWq, accHistory) else
                         (Q.pushBack accWq newEdge, S.insert newEdge accHistory))
                     (wq1, history1) nopDests in
-              -- having live source nodes (or can we assume the path will always be alive?)
+              -- Closure rule: push + untargeted pop ==> ...
+              let untargetedDynPopsMnd = S.toList untargetedDynPops in
+              let rawUntargetedEdgesLsts =
+                    do
+                      f <- untargetedDynPopsMnd
+                      (singlePath, terminus) <- doUntargetedDynPop f se
+                      return $ pathToEdges singlePath n1 terminus
+              in
+              -- Closure rule: push + targeted pop ==> ...
               let dynPopDestsMnd = S.toList $ S.map (\(dest, f) -> (StaticTerminus dest, f)) dynPopDests in
-              let rawEdgesLsts =
+              let rawTargetedEdgesLsts =
                     do
                       (dest, f) <- dynPopDestsMnd
                       let pathLst = doTargetedDynPop f se
                       singlePath <- pathLst
                       return $ pathToEdges singlePath n1 dest
               in
+              -- Concatenate all of the paths from dynamic pops
+              let fullEdgesLst =
+                    concat rawTargetedEdgesLsts ++ concat rawUntargetedEdgesLsts
+              in
               {-- NOTE: Marking the IntermediateNodes as active --}
-              let fullEdgesLst = concat rawEdgesLsts in
+              -- Since the source of the new edges will definitely be
+              -- having live source nodes (or can we assume the path will always be alive?)
               let newActives = S.fromList $
                     MB.mapMaybe (\e ->
                                    case e of RegularEdge (Edge src _ _) ->
@@ -267,7 +284,8 @@ closureStep analysis =
                                              UntargetedEdge (UntargetedDynPopEdge src _) ->
                                                case src of IntermediateNode _ _ -> Just src
                                                            otherwise -> Nothing)
-                    fullEdgesLst in
+                    fullEdgesLst
+              in
               let newEdgesSet = S.fromList fullEdgesLst in
               {-- NOTE: Not marking the IntermediateNodes as active --}
               -- let newEdgesSet = S.fromList $ concat $ ND.toList rawEdgesLsts in
@@ -356,14 +374,18 @@ closureStep analysis =
                          activeNodes = ActiveNodes (S.union newActives activeNodes)
                        }
         (UntargetedEdge (e@(UntargetedDynPopEdge n1 (UntargetedDynPopAction pa))), wq') ->
-          let g' = if (S.member e (getUntargetedDynPopEdges g)) then g else (addUntargetedDynPopEdge e g) in
-          let udPops = S.toList $ findUntargetedDynPopEdgesBySource n1 g in
+          let g' = if (S.member e (getUntargetedDynPopEdges g)) then
+                     g
+                   else
+                     addUntargetedDynPopEdge e g
+          in
+          let pushSrcsAndElms = S.toList $ findPushEdgesByDest n1 g in
           let rawEdgesLsts =
                 do
-                  untargetedPop <- udPops
-                  let pathTerminusLst = doUntargetedDynPop untargetedPop
+                  (src, elm) <- pushSrcsAndElms
+                  let pathTerminusLst = doUntargetedDynPop pa elm
                   (singlePath, singleTerminus) <- pathTerminusLst
-                  return $ pathToEdges singlePath n1 singleTerminus
+                  return $ pathToEdges singlePath src singleTerminus
           in
           {-- NOTE: Marking the IntermediateNodes as active --}
           let fullEdgesLst = concat rawEdgesLsts in
