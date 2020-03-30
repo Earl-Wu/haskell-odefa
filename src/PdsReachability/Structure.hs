@@ -11,16 +11,23 @@ module PdsReachability.Structure
   Edge(..),
   InternalNode(..),
   Graph,
+  GeneralEdges(..),
+  Terminus(..),
+  UntargetedPopEdge(..),
+  UntargetedPopAction(..),
   emptyGraph,
   addEdge,
+  addUntargetedPopEdge,
   getEdges,
+  getUntargetedPopEdges,
   findPopEdgesBySourceAndElement,
   findNopEdgesBySource,
   findNopEdgesByDest,
   findPushEdgesByDestAndElement,
   findPushEdgesByDest,
   findPushEdgesBySource,
-  findDynPopEdgesBySource
+  findDynPopEdgesBySource,
+  findUntargetedPopEdgesBySource
 ) where
 
 import AST.Ast
@@ -60,16 +67,16 @@ deriving instance (SpecIs Show a) => Show (Graph a)
 
 data InternalNode a
   = UserNode (Node a)
-  | IntermediateNode [StackAction a] (InternalNode a)
-deriving instance (TargetedSpecIs Eq a) => (Eq (InternalNode a))
-deriving instance (TargetedSpecIs Ord a) => (Ord (InternalNode a))
-deriving instance (TargetedSpecIs Show a) => (Show (InternalNode a))
+  | IntermediateNode [StackAction a] (Terminus a)
+deriving instance (SpecIs Eq a) => (Eq (InternalNode a))
+deriving instance (SpecIs Ord a) => (Ord (InternalNode a))
+deriving instance (SpecIs Show a) => (Show (InternalNode a))
 
 data Edge a
   = Edge (InternalNode a) (StackAction a) (InternalNode a)
-deriving instance (TargetedSpecIs Eq a) => (Eq (Edge a))
-deriving instance (TargetedSpecIs Ord a) => (Ord (Edge a))
-deriving instance (TargetedSpecIs Show a) => (Show (Edge a))
+deriving instance (SpecIs Eq a) => (Eq (Edge a))
+deriving instance (SpecIs Ord a) => (Ord (Edge a))
+deriving instance (SpecIs Show a) => (Show (Edge a))
 
 data UntargetedPopEdge a
   = UntargetedPopEdge (InternalNode a) (UntargetedPopAction a)
@@ -81,6 +88,20 @@ data UntargetedPopAction a = UntargetedPopAction (UntargetedPop a)
 deriving instance (SpecIs Eq a) => (Eq (UntargetedPopAction a))
 deriving instance (SpecIs Ord a) => (Ord (UntargetedPopAction a))
 deriving instance (SpecIs Show a) => (Show (UntargetedPopAction a))
+
+data Terminus a
+  = StaticTerminus (InternalNode a)
+  | DynamicTerminus (UntargetedPopAction a)
+deriving instance (SpecIs Eq a) => (Eq (Terminus a))
+deriving instance (SpecIs Ord a) => (Ord (Terminus a))
+deriving instance (SpecIs Show a) => (Show (Terminus a))
+
+data GeneralEdges a
+  = RegularEdge (Edge a)
+  | UntargetedEdge (UntargetedPopEdge a)
+deriving instance (SpecIs Eq a) => (Eq (GeneralEdges a))
+deriving instance (SpecIs Ord a) => (Ord (GeneralEdges a))
+deriving instance (SpecIs Show a) => (Show (GeneralEdges a))
 
 data StackAction a
   = Push (Element a)
@@ -115,7 +136,7 @@ alterMap m (k, v) =
     then M.adjust (\s -> S.insert v s) k m
     else M.insert k (S.singleton v) m
 
-addEdge :: (TargetedSpec a) => Edge a -> Graph a -> Graph a
+addEdge :: (Spec a) => Edge a -> Graph a -> Graph a
 addEdge (e@(Edge n1 sa n2)) g =
   let newEdges = S.insert e (allEdges g) in
   case sa of
@@ -172,8 +193,12 @@ getEdges :: Graph a -> S.Set (Edge a)
 getEdges g =
   allEdges g
 
+getUntargetedPopEdges :: Graph a -> S.Set (UntargetedPopEdge a)
+getUntargetedPopEdges g =
+  allUntargetedPopEdges g
+
 findPopEdgesBySourceAndElement ::
-  (TargetedSpecIs Ord a) =>
+  (SpecIs Ord a) =>
   (InternalNode a, Element a) -> Graph a -> S.Set (InternalNode a)
 findPopEdgesBySourceAndElement (n, e) g =
   let entry = M.lookup (n, e) (popEdgesBySourceAndElement g) in
@@ -182,7 +207,7 @@ findPopEdgesBySourceAndElement (n, e) g =
     Nothing -> S.empty
 
 findNopEdgesBySource ::
-  (TargetedSpecIs Ord a) =>
+  (SpecIs Ord a) =>
   (InternalNode a) -> Graph a -> S.Set (InternalNode a)
 findNopEdgesBySource n g =
   let entry = M.lookup n (nopEdgesBySource g) in
@@ -191,7 +216,7 @@ findNopEdgesBySource n g =
     Nothing -> S.empty
 
 findNopEdgesByDest ::
-  (TargetedSpecIs Ord a) =>
+  (SpecIs Ord a) =>
   (InternalNode a) -> Graph a -> S.Set (InternalNode a)
 findNopEdgesByDest n g =
   let entry = M.lookup n (nopEdgesByDest g) in
@@ -200,7 +225,7 @@ findNopEdgesByDest n g =
     Nothing -> S.empty
 
 findPushEdgesByDestAndElement ::
-  (TargetedSpecIs Ord a) =>
+  (SpecIs Ord a) =>
   (InternalNode a, Element a) -> Graph a -> S.Set (InternalNode a)
 findPushEdgesByDestAndElement (n, e) g =
   let entry = M.lookup (n, e) (pushEdgesByDestAndElement g) in
@@ -209,7 +234,7 @@ findPushEdgesByDestAndElement (n, e) g =
     Nothing -> S.empty
 
 findPushEdgesByDest ::
-  (TargetedSpecIs Ord a) =>
+  (SpecIs Ord a) =>
   (InternalNode a) -> Graph a -> S.Set (InternalNode a, Element a)
 findPushEdgesByDest n g =
   let entry = M.lookup n (pushEdgesByDest g) in
@@ -218,7 +243,7 @@ findPushEdgesByDest n g =
     Nothing -> S.empty
 
 findPushEdgesBySource ::
-  (TargetedSpecIs Ord a) =>
+  (SpecIs Ord a) =>
   (InternalNode a) -> Graph a -> S.Set (InternalNode a, Element a)
 findPushEdgesBySource n g =
   let entry = M.lookup n (pushEdgesBySource g) in
@@ -227,7 +252,7 @@ findPushEdgesBySource n g =
     Nothing -> S.empty
 
 findDynPopEdgesBySource ::
-  (TargetedSpecIs Ord a) =>
+  (SpecIs Ord a) =>
   (InternalNode a) -> Graph a -> S.Set (InternalNode a, DynPop a)
 findDynPopEdgesBySource n g =
   let entry = M.lookup n (dynPopEdgesBySource g) in
