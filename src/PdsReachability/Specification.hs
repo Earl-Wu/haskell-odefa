@@ -13,19 +13,19 @@ import GHC.Exts (Constraint)
 
 type family Node a :: *
 type family Element a :: *
-type family DynPop a :: *
-type family UntargetedPop a :: *
+type family TargetedDynPop a :: *
+type family UntargetedDynPop a :: *
 
 type TargetedSpecIs c a =  -- :: (* -> Constraint) -> * -> Constraint
   ((c (Node a),
     c (Element a),
-    c (DynPop a))
+    c (TargetedDynPop a))
    :: Constraint
   )
 
 type SpecIs c a =  -- :: (* -> Constraint) -> * -> Constraint
   ((TargetedSpecIs c a,
-    c (UntargetedPop a))
+    c (UntargetedDynPop a))
    :: Constraint
   )
 

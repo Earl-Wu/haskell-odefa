@@ -38,10 +38,10 @@ data Waitlist a = Waitlist (M.Map (InternalNode a) (S.Set (GeneralEdges a)))
 
 data Analysis a =
   Analysis
-    { doDynPop :: (DynPop a -> Element a -> [Path a]),
-      -- TODO: add the untargeted version of the doDynPop
-      -- TODO: Terminus type is union of InternalNode and UntargetedPopEdge
-      doTargetlessDynPop :: (UntargetedPop a -> [(Path a, Terminus a)]),
+    { doTargetedDynPop :: (TargetedDynPop a -> Element a -> [Path a]),
+      -- TODO: add the untargeted version of the doTargetedDynPop
+      -- TODO: Terminus type is union of InternalNode and UntargetedDynPopEdge
+      doUntargetedDynPop :: (UntargetedDynPop a -> [(Path a, Terminus a)]),
       graph :: Graph a,
       workQueue :: WorkQueue a,
       activeNodes :: ActiveNodes a,
@@ -50,7 +50,7 @@ data Analysis a =
       edgeFunctions :: [EdgeFunction a]
     }
 
--- Cannot derive show for doDynPop so have to manually roll out this function
+-- Cannot derive show for doTargetedDynPop so have to manually roll out this function
 instance (SpecIs Show a) => Show (Analysis a) where
   show a = "Analysis Graph: " ++ show (graph a) ++ ";\n" ++
     "WorkQueue: " ++ show (workQueue a) ++ ";\n" ++
@@ -62,11 +62,11 @@ getGraph analysis = graph analysis
 getWorkQueue :: Analysis a -> WorkQueue a
 getWorkQueue analysis = workQueue analysis
 
-getDynPop :: Analysis a -> (DynPop a -> Element a -> [Path a])
-getDynPop analysis = doDynPop analysis
+getTargetedDynPop :: Analysis a -> (TargetedDynPop a -> Element a -> [Path a])
+getTargetedDynPop analysis = doTargetedDynPop analysis
 
-getTargetlessDynPop :: Analysis a -> (UntargetedPop a -> [(Path a, Terminus a)])
-getTargetlessDynPop analysis = doTargetlessDynPop analysis
+getUntargetedDynPop :: Analysis a -> (UntargetedDynPop a -> [(Path a, Terminus a)])
+getUntargetedDynPop analysis = doUntargetedDynPop analysis
 
 getActiveNodes :: Analysis a -> ActiveNodes a
 getActiveNodes analysis = activeNodes analysis
@@ -81,12 +81,12 @@ getEdgeFunctions :: Analysis a -> [EdgeFunction a]
 getEdgeFunctions analysis = edgeFunctions analysis
 
 emptyAnalysis ::
-  (DynPop a -> Element a -> [Path a]) ->
-  (UntargetedPop a -> ([(Path a, Terminus a)])) ->
+  (TargetedDynPop a -> Element a -> [Path a]) ->
+  (UntargetedDynPop a -> ([(Path a, Terminus a)])) ->
   Analysis a
-emptyAnalysis doDynPop doTargetlessDynPop =
-  Analysis { doDynPop = doDynPop,
-             doTargetlessDynPop = doTargetlessDynPop,
+emptyAnalysis doTargetedDynPop doUntargetedDynPop =
+  Analysis { doTargetedDynPop = doTargetedDynPop,
+             doUntargetedDynPop = doUntargetedDynPop,
              graph = emptyGraph,
              workQueue = WorkQueue Q.empty,
              activeNodes = ActiveNodes S.empty,
@@ -112,7 +112,7 @@ addEdgeFunction (rawEf@(EdgeFunction ef)) analysis =
                        case e of RegularEdge (Edge src _ _) ->
                                    case src of IntermediateNode _ _ -> Just src
                                                otherwise -> Nothing
-                                 UntargetedEdge (UntargetedPopEdge src _) ->
+                                 UntargetedEdge (UntargetedDynPopEdge src _) ->
                                    case src of IntermediateNode _ _ -> Just src
                                                otherwise -> Nothing
                     ) newEdges in
@@ -163,7 +163,7 @@ pathToEdges (Path path) src dest =
     [] ->
       case dest of
         StaticTerminus destNode -> [RegularEdge $ Edge src Nop destNode]
-        DynamicTerminus upAction -> [UntargetedEdge $ UntargetedPopEdge src upAction]
+        DynamicTerminus upAction -> [UntargetedEdge $ UntargetedDynPopEdge src upAction]
     hd : [] ->
       case dest of
         StaticTerminus destNode -> [RegularEdge $ Edge src hd destNode]
@@ -209,8 +209,8 @@ closureStep analysis =
       -- Extracting basic information from the analysis
       let g = getGraph analysis in
       let History history = getHistory analysis in
-      let doDynPop = getDynPop analysis in
-      let doTargetlessDynPop = getTargetlessDynPop analysis in
+      let doTargetedDynPop = getTargetedDynPop analysis in
+      let doUntargetedDynPop = getUntargetedDynPop analysis in
       let ActiveNodes ogActives = getActiveNodes analysis in
       -- If the edge is in the workqueue, we have not done work on it
       let work = MB.fromJust (Q.popFront wq) in
@@ -234,7 +234,7 @@ closureStep analysis =
               let analysis'' = propagateLiveness n2 analysis' in
               let popDests = findPopEdgesBySourceAndElement (n2, se) g in
               let nopDests = findNopEdgesBySource n2 g in
-              let dynPopDests = findDynPopEdgesBySource n2 g in
+              let dynPopDests = findTargetedDynPopEdgesBySource n2 g in
               -- Since the source of the new edges will definitely be
               let (wq1, history1) = S.foldl
                     (\(accWq, accHistory) -> \dest ->
@@ -253,7 +253,7 @@ closureStep analysis =
               let rawEdgesLsts =
                     do
                       (dest, f) <- dynPopDestsMnd
-                      let pathLst = doDynPop f se
+                      let pathLst = doTargetedDynPop f se
                       singlePath <- pathLst
                       return $ pathToEdges singlePath n1 dest
               in
@@ -264,7 +264,7 @@ closureStep analysis =
                                    case e of RegularEdge (Edge src _ _) ->
                                                case src of IntermediateNode _ _ -> Just src
                                                            otherwise -> Nothing
-                                             UntargetedEdge (UntargetedPopEdge src _) ->
+                                             UntargetedEdge (UntargetedDynPopEdge src _) ->
                                                case src of IntermediateNode _ _ -> Just src
                                                            otherwise -> Nothing)
                     fullEdgesLst in
@@ -331,7 +331,7 @@ closureStep analysis =
               let rawEdgesLsts =
                     do
                       (src, elm) <- pushSrcsAndElms
-                      let pathLst = doDynPop f elm
+                      let pathLst = doTargetedDynPop f elm
                       singlePath <- pathLst
                       return $ pathToEdges singlePath src (StaticTerminus n2)
               in
@@ -342,7 +342,7 @@ closureStep analysis =
                                    case e of RegularEdge (Edge src _ _) ->
                                                case src of IntermediateNode _ _ -> Just src
                                                            otherwise -> Nothing
-                                             UntargetedEdge (UntargetedPopEdge src _) ->
+                                             UntargetedEdge (UntargetedDynPopEdge src _) ->
                                                case src of IntermediateNode _ _ -> Just src
                                                            otherwise -> Nothing
                                 ) fullEdgesLst in
@@ -355,13 +355,13 @@ closureStep analysis =
                          workQueue = WorkQueue finalWq,
                          activeNodes = ActiveNodes (S.union newActives activeNodes)
                        }
-        (UntargetedEdge (e@(UntargetedPopEdge n1 (UntargetedPopAction pa))), wq') ->
-          let g' = if (S.member e (getUntargetedPopEdges g)) then g else (addUntargetedPopEdge e g) in
-          let udPops = S.toList $ findUntargetedPopEdgesBySource n1 g in
+        (UntargetedEdge (e@(UntargetedDynPopEdge n1 (UntargetedDynPopAction pa))), wq') ->
+          let g' = if (S.member e (getUntargetedDynPopEdges g)) then g else (addUntargetedDynPopEdge e g) in
+          let udPops = S.toList $ findUntargetedDynPopEdgesBySource n1 g in
           let rawEdgesLsts =
                 do
                   untargetedPop <- udPops
-                  let pathTerminusLst = doTargetlessDynPop untargetedPop
+                  let pathTerminusLst = doUntargetedDynPop untargetedPop
                   (singlePath, singleTerminus) <- pathTerminusLst
                   return $ pathToEdges singlePath n1 singleTerminus
           in
@@ -372,7 +372,7 @@ closureStep analysis =
                                case e of RegularEdge (Edge src _ _) ->
                                            case src of IntermediateNode _ _ -> Just src
                                                        otherwise -> Nothing
-                                         UntargetedEdge (UntargetedPopEdge src _) ->
+                                         UntargetedEdge (UntargetedDynPopEdge src _) ->
                                            case src of IntermediateNode _ _ -> Just src
                                                        otherwise -> Nothing
                             ) fullEdgesLst in
@@ -389,7 +389,7 @@ closureStep analysis =
 
 fullClosure :: (Spec a) => Analysis a -> Analysis a
 fullClosure analysis =
-  let doDynPop = getDynPop analysis in
+  let doTargetedDynPop = getTargetedDynPop analysis in
   let analysis' = closureStep analysis in
   let WorkQueue wq' = getWorkQueue analysis' in
   if (null wq') then analysis' else fullClosure analysis'
@@ -432,13 +432,13 @@ updateAnalysis edge (analysis) =
           in
           analysis { graph = g',
                      waitlist = Waitlist waitlist' }
-    UntargetedEdge (e@(UntargetedPopEdge src (UntargetedPopAction pa))) ->
-      if S.member e (getUntargetedPopEdges g) then analysis else
+    UntargetedEdge (e@(UntargetedDynPopEdge src (UntargetedDynPopAction pa))) ->
+      if S.member e (getUntargetedDynPopEdges g) then analysis else
         -- If it's not present in the graph, we need to check for its active status
         let WorkQueue wq = getWorkQueue analysis in
         let ActiveNodes activeNodes = getActiveNodes analysis in
         -- We will need to add it to the graph either way, so construct the new graph upfront
-        let g' = addUntargetedPopEdge e g in
+        let g' = addUntargetedDynPopEdge e g in
         -- If the source of new edge is active, we add it to the workqueue
         if (S.member src activeNodes) then
           let History history = getHistory analysis in
