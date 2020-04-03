@@ -29,20 +29,15 @@ deriving instance (SpecIs Show a) => (Show (History a))
 data ActiveNodes a = ActiveNodes (S.Set (InternalNode a))
 deriving instance (SpecIs Show a) => (Show (ActiveNodes a))
 
--- TODO: Edit Edge Functions as well
--- NOTE: Why this type?
 data EdgeFunction a = EdgeFunction (InternalNode a -> [(Path a, Terminus a)])
 
--- TODO: May need to modify this
 data Waitlist a = Waitlist (M.Map (InternalNode a) (S.Set (GeneralEdges a)))
 
 data Analysis a =
   Analysis
     { doTargetedDynPop :: (TargetedDynPop a -> Element a -> [Path a]),
-      -- TODO: add the untargeted version of the doTargetedDynPop
-      -- TODO: Terminus type is union of InternalNode and UntargetedDynPopEdge
       doUntargetedDynPop ::
-        (UntargetedDynPop a ->  Element a -> [(Path a, Terminus a)]),
+        (UntargetedDynPop a -> Element a -> [(Path a, Terminus a)]),
       graph :: Graph a,
       workQueue :: WorkQueue a,
       activeNodes :: ActiveNodes a,
