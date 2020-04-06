@@ -28,6 +28,7 @@ deriving instance (SpecIs Show a) => (Show (History a))
 
 data ActiveNodes a = ActiveNodes (S.Set (InternalNode a))
 deriving instance (SpecIs Show a) => (Show (ActiveNodes a))
+deriving instance (SpecIs Eq a) => (Eq (ActiveNodes a))
 
 data EdgeFunction a = EdgeFunction (InternalNode a -> [(Path a, Terminus a)])
 
@@ -154,6 +155,35 @@ addActiveNode newNode analysis =
     in
     propagateLiveness newNode analysis'
 
+addStart :: (Spec a) => Node a -> [StackAction a] -> Analysis a -> Analysis a
+addStart node actions analysis =
+  let internalTarget = UserNode node in
+  let terminus = StaticTerminus internalTarget in
+  let internalSource =
+        if actions == [] then
+          internalTarget
+        else
+          IntermediateNode actions terminus
+  in
+  let edges =
+        pathToEdges
+          (Path actions)
+          internalSource
+          (StaticTerminus internalTarget)
+  in
+  analysis
+  & addActiveNode internalSource
+  & addAnalysisEdges edges
+
+getReachableNodes ::
+  (Spec a) =>
+  Node a -> [StackAction a] -> Analysis a -> [Node a]
+getReachableNodes node actions analysis =
+  -- NOTE: Look up Nop edges in the analysis graph and filter out the IntermediateNodes
+
+  {- TODO -}
+  undefined
+
 pathToEdges :: Path a -> InternalNode a -> Terminus a -> [GeneralEdges a]
 pathToEdges (Path path) src dest =
   case path of
@@ -213,7 +243,7 @@ closureStep analysis =
       let work = MB.fromJust (Q.popFront wq) in
       case work of
         (RegularEdge (e@(Edge n1 sa n2)), wq') ->
-          -- It's true that all edges in the workqueue should have active sources,
+      -- It's true that all edges in the workqueue should have active sources,
       -- but we never explicitly change the active status of IntermediateNodes
       -- I think we can either change the activeness here or when we are creating
       -- the path. I don't know which one is the correct move
@@ -223,12 +253,17 @@ closureStep analysis =
       -- let actives = if (S.member n1 ogActives) then ogActives else (S.insert n1 ogActives) in
       -- let analysis' = analysis { activeNodes = actives } in
       {-- NOTE: Edges in workQueue always have active sources --}
-          let analysis' = analysis in
+          let analysis' = analysis { workQueue = WorkQueue wq' } in
+          {-- NOTE: It's ok to use the original graph g in the following computation
+                    because the edge does not close with itself --}
           let g' = if (S.member e (getEdges g)) then g else (addEdge e g) in
           case sa of
             Push se ->
               -- Push edge propagates liveness
-              let analysis'' = propagateLiveness n2 analysis' in
+              let analysis'' = propagateLiveness n2 (addActiveNode n2 analysis') in
+              -- NOTE: here we need to get the latest work queue,
+              -- because propagateLiveness might alter the it
+              let WorkQueue curWq = getWorkQueue analysis'' in
               let popDests = findPopEdgesBySourceAndElement (n2, se) g in
               let nopDests = findNopEdgesBySource n2 g in
               let dynPopDests = findTargetedDynPopEdgesBySource n2 g in
@@ -239,7 +274,7 @@ closureStep analysis =
                       let newEdge = RegularEdge $ Edge n1 Nop dest in
                       if S.member newEdge accHistory then (accWq, accHistory) else
                         (Q.pushBack accWq newEdge, S.insert newEdge accHistory))
-                    (wq', history) popDests in
+                    (curWq, history) popDests in
               -- Closure rule: push + nop ==> push
               let (wq2, history2) = S.foldl
                     (\(accWq, accHistory) -> \dest ->
@@ -312,7 +347,8 @@ closureStep analysis =
                          }
             Nop ->
               -- Nop edge propagates liveness
-              let analysis'' = propagateLiveness n2 analysis' in
+              let analysis'' = propagateLiveness n2 (addActiveNode n2 analysis') in
+              let WorkQueue curWq = getWorkQueue analysis'' in
               let ActiveNodes activeNodes = getActiveNodes analysis'' in
               let nopDests = findNopEdgesBySource n2 g in
               let wq1 = S.foldl
@@ -320,7 +356,7 @@ closureStep analysis =
                       let newEdge = RegularEdge $ Edge n1 Nop dest in
                       if (S.member newEdge history) then acc else
                         Q.pushBack acc newEdge)
-                    wq' nopDests in
+                    curWq nopDests in
               let nopSrcs = findNopEdgesByDest n1 g in
               let activenopSrcs = S.filter (\s -> S.member s activeNodes) nopSrcs in
               let wq2 = S.foldl
@@ -413,8 +449,8 @@ fullClosure analysis =
 
 -- TODO: Yet another dictionary keeping track of edges in the graph with inactive
 -- sources so that we can dump them into workQueue when their source becomes active
-updateAnalysis :: (Spec a) => GeneralEdges a -> Analysis a -> Analysis a
-updateAnalysis edge (analysis) =
+addAnalysisEdge :: (Spec a) => GeneralEdges a -> Analysis a -> Analysis a
+addAnalysisEdge edge analysis =
   -- Check whether the "new" edge is already seen
   let g = getGraph analysis in
   case edge of
@@ -479,3 +515,6 @@ updateAnalysis edge (analysis) =
           in
           analysis { graph = g',
                      waitlist = Waitlist waitlist' }
+
+addAnalysisEdges :: (Spec a) => [GeneralEdges a] -> Analysis a -> Analysis a
+addAnalysisEdges edges analysis = L.foldl (flip addAnalysisEdge) analysis edges

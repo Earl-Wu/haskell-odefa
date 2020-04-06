@@ -15,6 +15,7 @@ module PdsReachability.Structure
   Terminus(..),
   UntargetedDynPopEdge(..),
   emptyGraph,
+  graphFromEdges,
   addEdge,
   addUntargetedDynPopEdge,
   getEdges,
@@ -120,9 +121,9 @@ emptyGraph
             untargetedDynPopBySrc = M.empty
           }
 
--- graphFromEdges :: (SpecIs Ord a) => S.Set (Edge a) -> Graph a
--- graphFromEdges edgeSet =
---   S.foldl (\acc -> \e -> addEdge e acc) emptyGraph edgeSet
+graphFromEdges :: (Spec a) => S.Set (Edge a) -> Graph a
+graphFromEdges edgeSet =
+  S.foldl (\acc -> \e -> addEdge e acc) emptyGraph edgeSet
 
 alterMap :: (Ord k, Ord v) => M.Map k (S.Set v) -> (k, v) ->  M.Map k (S.Set v)
 alterMap m (k, v) =
