@@ -97,5 +97,4 @@ primeFactorCountTest =
 
 primeTest :: TestTree
 primeTest =
-  -- testCase "BLARG" (assertEqual "BLARGL" "" (show primeFactorCountAnalysis))
   testCase "Prime test" (assertEqual "state check" [Count 3] primeFactorCountTest)
