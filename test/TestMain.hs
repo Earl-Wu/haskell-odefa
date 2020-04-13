@@ -9,10 +9,8 @@ import PdsReachability.Reachability
 import PdsReachability.Structure
 
 import qualified Spec
--- import qualified PrimeTest
+import qualified PrimeTest
 
 main :: IO ()
 main = do
-  defaultMain (testGroup "all tests" [Spec.tests
-                                      -- PrimeTest.tests
-                                      ])
+  defaultMain (testGroup "all tests" [Spec.tests, PrimeTest.tests])

@@ -7,6 +7,7 @@
 module PdsReachability.Reachability where
 
 import AST.Ast
+import Control.Monad
 import Data.Function
 import PdsReachability.Structure
 import PdsReachability.Specification
@@ -30,7 +31,7 @@ data ActiveNodes a = ActiveNodes (S.Set (InternalNode a))
 deriving instance (SpecIs Show a) => (Show (ActiveNodes a))
 deriving instance (SpecIs Eq a) => (Eq (ActiveNodes a))
 
-data EdgeFunction a = EdgeFunction (InternalNode a -> [(Path a, Terminus a)])
+data EdgeFunction a = EdgeFunction (Node a -> [(Path a, Terminus a)])
 
 data Waitlist a = Waitlist (M.Map (InternalNode a) (S.Set (GeneralEdges a)))
 
@@ -102,8 +103,12 @@ addEdgeFunction (rawEf@(EdgeFunction ef)) analysis =
   let newEdges = L.concat $
         do
           node <- actives
-          (path, dest) <- ef node
-          return $ pathToEdges path node dest
+          case node of
+            UserNode n -> do
+              (path, dest) <- ef n
+              return $ pathToEdges path node dest
+            IntermediateNode _ _ ->
+              mzero
   in
   let newActives = S.fromList $
         MB.mapMaybe (\e ->
@@ -138,11 +143,15 @@ addActiveNode newNode analysis =
     let activeNodes' = S.insert newNode activeNodes in
     let waitedWork = M.findWithDefault S.empty newNode waitlist in
     let waitlist' = M.delete newNode waitlist in
-    let edgesFromEf = S.fromList $ L.concat $
-          do
-            (EdgeFunction ef) <- getEdgeFunctions analysis
-            (path, dest) <- ef newNode
-            return $ pathToEdges path newNode dest
+    let edgesFromEf =
+          case newNode of
+            UserNode n ->
+              S.fromList $ L.concat $
+              do
+                (EdgeFunction ef) <- getEdgeFunctions analysis
+                (path, dest) <- ef n
+                return $ pathToEdges path newNode dest
+            IntermediateNode _ _ -> S.empty
     in
     let newWork = S.union waitedWork edgesFromEf in
     let history' = S.foldl (\acc -> \e -> S.insert e acc) history newWork in
@@ -179,10 +188,19 @@ getReachableNodes ::
   (Spec a) =>
   Node a -> [StackAction a] -> Analysis a -> [Node a]
 getReachableNodes node actions analysis =
-  -- NOTE: Look up Nop edges in the analysis graph and filter out the IntermediateNodes
-
-  {- TODO -}
-  undefined
+  let lookupNode = IntermediateNode actions (StaticTerminus (UserNode node)) in
+  -- Look up Nop edges in the analysis graph and filter out the IntermediateNodes
+  let ActiveNodes actives = getActiveNodes analysis in
+  let g = getGraph analysis in
+  if (S.member lookupNode actives) then
+    let rawRes = findNopEdgesBySource lookupNode g in
+    S.filter (\n -> case n of UserNode _ -> True
+                              IntermediateNode _ _ -> False
+             ) rawRes
+    & S.map (\n -> case n of UserNode res -> res)
+    & S.toList
+  -- TODO: check error handling
+  else undefined
 
 pathToEdges :: Path a -> InternalNode a -> Terminus a -> [GeneralEdges a]
 pathToEdges (Path path) src dest =

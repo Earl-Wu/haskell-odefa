@@ -1,4 +1,5 @@
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE EmptyDataDeriving #-}
 
 module PrimeTest where
 
@@ -11,6 +12,11 @@ import Data.Function
 import PdsReachability.Reachability
 import PdsReachability.Specification
 import PdsReachability.Structure
+
+tests :: TestTree
+tests =
+  testGroup "Prime test"
+  [primeTest]
 
 data PrimeTest
 
@@ -26,54 +32,70 @@ data StackElm
 
 data PrimeDynPop
   = PopAnythingBut StackElm
+  deriving (Eq, Ord, Show)
 
 data PrimeUntDynPop
+  deriving (Eq, Ord, Show)
 
 type instance Node PrimeTest = State
 type instance Element PrimeTest = StackElm
 type instance TargetedDynPop PrimeTest = PrimeDynPop
 type instance UntargetedDynPop PrimeTest = PrimeUntDynPop
 
--- doDynPopPrime :: PrimeDynPop -> Element PrimeTest -> [Path PrimeTest]
--- doDynPopPrime dpf element =
---   case dpf of
---     PopAnythingBut se ->
---       if (element == se) then [] else [Path []]
---
--- doUntargetedDynPopPrime :: PrimeUntDynPop -> Element PrimeTest -> [(Path PrimeTest, Terminus PrimeTest)]
--- doUntargetedDynPopPrime _ _ = []
---
--- -- primeFactorCountTest :: ?
--- primeFactorCountTest =
---   let isPrime n =
---         let divide k =
---               if (k <= 1) then True else
---                 case (n mod k) of 0 -> False
---                                   otherwise -> divide (k-1)
---             in
---         let isFactor n k =
---               if (n mod k == 0) then True else False in
---         let start = Number 12 in
---         let analysis =
---               emptyAnalysis doDynPopPrime doUntargetedDynPopPrime
---               & addEdgeFunction (\state ->
---                                     case state of
---                                       Number n ->
---                                         let leqState = [1..n] in
---                                         let primesLeqState = L.filter isPrime leqState in
---                                         let primeFactors = L.filter (isFactor n) primesLeqState in
---                                         L.map (\k -> ([Push (Prime k)], StaticTerminus (Number (n/k)))) primeFactors
---                                       Count _ -> []
---                                 )
---               & addEdge (Edge (UserNode (Number 1)) Nop (UserNode (Count 0)))
---               & addEdgeFunction (\state ->
---                             case state of
---                               Count c -> [([DynamicPop (PopAnythingBut(Bottom '$'))], StaticTerminus (Count (c+1)))]
---                               Number _ -> []
---                         )
---               & addStart start [Push (Bottom '$')]
---               & fullClosure
---         in
---         undefined -- TODO
---   in
---   undefined -- TODO
+doDynPopPrime :: PrimeDynPop -> Element PrimeTest -> [Path PrimeTest]
+doDynPopPrime dpf element =
+  case dpf of
+    PopAnythingBut se ->
+      if (element == se) then [] else [Path []]
+
+doUntargetedDynPopPrime :: PrimeUntDynPop -> Element PrimeTest -> [(Path PrimeTest, Terminus PrimeTest)]
+doUntargetedDynPopPrime _ _ = []
+
+primeFactorCountAnalysis :: Analysis PrimeTest
+primeFactorCountAnalysis =
+  let isPrime = \n ->
+        let divide = \k ->
+              if (k <= 1) then True else
+                case (mod n k) of 0 -> False
+                                  otherwise -> divide (k-1)
+        in
+        case n of 1 -> False
+                  _ -> divide (n-1)
+  in
+  let isFactor n k = if (mod n k == 0) then True else False
+  in
+  let start = Number 12 in
+  emptyAnalysis doDynPopPrime doUntargetedDynPopPrime
+  & addEdgeFunction (EdgeFunction (\state ->
+                        case state of
+                          Number n ->
+                            let leqState = [1..n] in
+                            let primesLeqState = L.filter isPrime leqState in
+                            let primeFactors = L.filter (isFactor n) primesLeqState in
+                            L.map (\k -> (Path [Push (Prime k)], StaticTerminus (UserNode (Number (div n k))))) primeFactors
+                          Count _ -> []
+                    ))
+  & addAnalysisEdge (RegularEdge (Edge (UserNode (Number 1)) Nop (UserNode (Count 0))))
+  & addEdgeFunction (EdgeFunction (\state ->
+                case state of
+                  Count c -> [(Path [DynamicPop (PopAnythingBut(Bottom '$'))], StaticTerminus (UserNode $ Count (c+1)))]
+                  Number _ -> []
+            ))
+  & addEdgeFunction (EdgeFunction (\state ->
+                case state of
+                  Count _ ->
+                    [(Path [Pop (Bottom '$')], StaticTerminus (UserNode state))]
+                  Number _ -> []
+            ))
+  & addStart start [Push (Bottom '$')]
+  & fullClosure
+
+primeFactorCountTest :: [State]
+primeFactorCountTest =
+  let start = Number 12 in
+  getReachableNodes start [Push (Bottom '$')] primeFactorCountAnalysis
+
+primeTest :: TestTree
+primeTest =
+  -- testCase "BLARG" (assertEqual "BLARGL" "" (show primeFactorCountAnalysis))
+  testCase "Prime test" (assertEqual "state check" [Count 3] primeFactorCountTest)

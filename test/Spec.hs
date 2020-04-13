@@ -48,7 +48,7 @@ doUntargetedDynPop1 udpf se =
 edgeFun1 :: EdgeFunction Test
 edgeFun1 = EdgeFunction (\n ->
   case n of
-    UserNode "b" -> [(Path [Pop "x"], (StaticTerminus $ UserNode "c"))]
+    "b" -> [(Path [Pop "x"], (StaticTerminus $ UserNode "c"))]
     otherwise -> [])
 
 tests :: TestTree
