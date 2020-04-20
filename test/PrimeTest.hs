@@ -25,6 +25,11 @@ data State
   | Count Int
   deriving (Eq, Ord, Show)
 
+data StateClass
+  = NumberClass
+  | CountClass
+  deriving (Eq, Ord, Show)
+
 data StackElm
   = Bottom Char
   | Prime Int
@@ -38,9 +43,14 @@ data PrimeUntDynPop
   deriving (Eq, Ord, Show)
 
 type instance Node PrimeTest = State
+type instance NodeClass PrimeTest = StateClass
 type instance Element PrimeTest = StackElm
 type instance TargetedDynPop PrimeTest = PrimeDynPop
 type instance UntargetedDynPop PrimeTest = PrimeUntDynPop
+
+classifyState :: State -> StateClass
+classifyState (Number _) = NumberClass
+classifyState (Count _) = CountClass
 
 doDynPopPrime :: PrimeDynPop -> Element PrimeTest -> [Path PrimeTest]
 doDynPopPrime dpf element =
@@ -65,8 +75,9 @@ primeFactorCountAnalysis =
   let isFactor n k = if (mod n k == 0) then True else False
   in
   let start = Number 12 in
-  emptyAnalysis doDynPopPrime doUntargetedDynPopPrime
-  & addEdgeFunction (EdgeFunction (\state ->
+  emptyAnalysis classifyState doDynPopPrime doUntargetedDynPopPrime
+  & addEdgeFunction (Just NumberClass)
+      (EdgeFunction (\state ->
                         case state of
                           Number n ->
                             let leqState = [1..n] in
@@ -76,12 +87,14 @@ primeFactorCountAnalysis =
                           Count _ -> []
                     ))
   & addAnalysisEdge (RegularEdge (Edge (UserNode (Number 1)) Nop (UserNode (Count 0))))
-  & addEdgeFunction (EdgeFunction (\state ->
+  & addEdgeFunction (Just CountClass)
+      (EdgeFunction (\state ->
                 case state of
                   Count c -> [(Path [DynamicPop (PopAnythingBut(Bottom '$'))], StaticTerminus (UserNode $ Count (c+1)))]
                   Number _ -> []
             ))
-  & addEdgeFunction (EdgeFunction (\state ->
+  & addEdgeFunction (Just CountClass)
+      (EdgeFunction (\state ->
                 case state of
                   Count _ ->
                     [(Path [Pop (Bottom '$')], StaticTerminus (UserNode state))]

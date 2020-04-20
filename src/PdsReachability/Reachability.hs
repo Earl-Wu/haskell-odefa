@@ -16,6 +16,7 @@ import qualified Data.List as L
 import qualified Data.Set as S
 import qualified Data.Map as M
 import qualified Data.Maybe as MB
+import qualified Data.Multimap as MM
 import qualified Data.Dequeue as Q
 
 data WorkQueue a = WorkQueue (Q.BankersDequeue (GeneralEdges a))
@@ -46,16 +47,19 @@ data Waitlist a = Waitlist (M.Map (InternalNode a) (S.Set (GeneralEdges a)))
 
 data Analysis a =
   Analysis
-    { doTargetedDynPop :: (TargetedDynPop a -> Element a -> [Path a]),
+    { doClassify :: (Node a -> NodeClass a),
+      doTargetedDynPop :: (TargetedDynPop a -> Element a -> [Path a]),
       doUntargetedDynPop ::
         (UntargetedDynPop a -> Element a -> [(Path a, Terminus a)]),
       graph :: Graph a,
       workQueue :: WorkQueue a,
       activeNodes :: ActiveNodes a,
+      activeUserNodes :: S.Set (Node a),
+      activeNodesByClass :: MM.Multimap S.Set (NodeClass a) (Node a),
       questions :: Questions a,
       history :: History a,
       waitlist :: Waitlist a,
-      edgeFunctions :: [EdgeFunction a]
+      edgeFunctions :: MM.Multimap [] (Maybe (NodeClass a)) (EdgeFunction a)
     }
 
 -- Cannot derive show for doTargetedDynPop so have to manually roll out this function
@@ -80,6 +84,15 @@ getUntargetedDynPop analysis = doUntargetedDynPop analysis
 getActiveNodes :: Analysis a -> ActiveNodes a
 getActiveNodes analysis = activeNodes analysis
 
+getActiveUserNodes :: Analysis a -> S.Set (Node a)
+getActiveUserNodes analysis = activeUserNodes analysis
+
+getActiveNodesByClass ::
+  (Ord (Node a), Ord (NodeClass a)) =>
+  NodeClass a -> Analysis a -> S.Set (Node a)
+getActiveNodesByClass nodeClass analysis =
+  MM.find nodeClass (activeNodesByClass analysis)
+
 getQuestions :: Analysis a -> Questions a
 getQuestions analysis = questions analysis
 
@@ -89,42 +102,53 @@ getHistory analysis = history analysis
 getWaitlist :: Analysis a -> Waitlist a
 getWaitlist analysis = waitlist analysis
 
-getEdgeFunctions :: Analysis a -> [EdgeFunction a]
-getEdgeFunctions analysis = edgeFunctions analysis
+getEdgeFunctionsByClass ::
+  Ord (NodeClass a) =>
+  NodeClass a -> Analysis a -> [EdgeFunction a]
+getEdgeFunctionsByClass nodeClass analysis =
+  MM.find (Just nodeClass) (edgeFunctions analysis) `mappend`
+  MM.find Nothing (edgeFunctions analysis)
 
 emptyAnalysis ::
+  (Node a -> NodeClass a) ->
   (TargetedDynPop a -> Element a -> [Path a]) ->
   (UntargetedDynPop a ->  Element a -> ([(Path a, Terminus a)])) ->
   Analysis a
-emptyAnalysis doTargetedDynPop doUntargetedDynPop =
-  Analysis { doTargetedDynPop = doTargetedDynPop,
+emptyAnalysis classifier doTargetedDynPop doUntargetedDynPop =
+  Analysis { doClassify = classifier,
+             doTargetedDynPop = doTargetedDynPop,
              doUntargetedDynPop = doUntargetedDynPop,
              graph = emptyGraph,
              workQueue = WorkQueue Q.empty,
              activeNodes = ActiveNodes S.empty,
+             activeUserNodes = S.empty,
+             activeNodesByClass = MM.empty,
              questions = Questions S.empty,
              history = History S.empty,
              waitlist = Waitlist M.empty,
-             edgeFunctions = []
+             edgeFunctions = MM.empty
            }
 
-addEdgeFunction :: (Spec a) => EdgeFunction a -> Analysis a -> Analysis a
-addEdgeFunction (rawEf@(EdgeFunction ef)) analysis =
+addEdgeFunction ::
+  forall a. (Spec a) => Maybe (NodeClass a) -> EdgeFunction a -> Analysis a -> Analysis a
+addEdgeFunction maybeNodeClass (rawEf@(EdgeFunction ef)) analysis =
   let WorkQueue wq = getWorkQueue analysis in
   let History history = getHistory analysis in
   let ActiveNodes activeSet = getActiveNodes analysis in
-  let actives = S.toList activeSet in
-  let newEdges = L.concat $
-        do
+  let newEdges =
+        let actives =
+              case maybeNodeClass of
+                Just nodeClass ->
+                  S.toList $ getActiveNodesByClass nodeClass analysis
+                Nothing ->
+                  S.toList $ getActiveUserNodes analysis
+        in
+        L.concat $ do
           node <- actives
-          case node of
-            UserNode n -> do
-              (path, dest) <- ef n
-              return $ pathToEdges path node dest
-            IntermediateNode _ _ ->
-              mzero
+          (path, dest) <- ef node
+          return $ pathToEdges path (UserNode node) dest
   in
-  let newActives = S.fromList $
+  let newIntermediateActives = S.fromList $
         MB.mapMaybe (\e ->
                        case e of RegularEdge (Edge src _ _) ->
                                    case src of IntermediateNode _ _ -> Just src
@@ -132,7 +156,8 @@ addEdgeFunction (rawEf@(EdgeFunction ef)) analysis =
                                  UntargetedEdge (UntargetedDynPopEdge src _) ->
                                    case src of IntermediateNode _ _ -> Just src
                                                otherwise -> Nothing
-                    ) newEdges in
+                    ) newEdges
+  in
   let newEdgesSet = S.fromList newEdges in
   let (finalWq, finalHistory) =
         S.foldl (\(accWq, accHistory) -> \e ->
@@ -140,8 +165,10 @@ addEdgeFunction (rawEf@(EdgeFunction ef)) analysis =
             (Q.pushBack accWq e, S.insert e accHistory)) (wq, history) newEdgesSet
   in analysis { workQueue = WorkQueue finalWq,
                 history = History finalHistory,
-                activeNodes = ActiveNodes (S.union newActives activeSet),
-                edgeFunctions = rawEf : (getEdgeFunctions analysis)
+                activeNodes =
+                  ActiveNodes (S.union newIntermediateActives activeSet),
+                edgeFunctions =
+                  MM.append maybeNodeClass rawEf $ edgeFunctions analysis
               }
 
 addActiveNode :: (Spec a) => InternalNode a -> Analysis a -> Analysis a
@@ -155,23 +182,38 @@ addActiveNode newNode analysis =
     -- If not, then we need to empty the waitlist corresponding to this node,
     -- call the edge functions, and propagate liveness from it
     let activeNodes' = S.insert newNode activeNodes in
+    let (activeNodesByClass', activeUserNodes', edgesFromEf) =
+          case newNode of
+            IntermediateNode _ _ ->
+              ( activeNodesByClass analysis
+              , getActiveUserNodes analysis
+              , S.empty)
+            UserNode n ->
+              let classification = doClassify analysis n in
+              let activeNodesByClass' =
+                    MM.append classification n $ activeNodesByClass analysis
+              in
+              let edgesFromEf =
+                    S.fromList $ L.concat $
+                    do
+                      (EdgeFunction ef) <-
+                          getEdgeFunctionsByClass classification analysis
+                      (path, dest) <- ef n
+                      return $ pathToEdges path newNode dest
+              in
+              ( activeNodesByClass'
+              , (S.insert n (getActiveUserNodes analysis))
+              , edgesFromEf)
+    in
     let waitedWork = M.findWithDefault S.empty newNode waitlist in
     let waitlist' = M.delete newNode waitlist in
-    let edgesFromEf =
-          case newNode of
-            UserNode n ->
-              S.fromList $ L.concat $
-              do
-                (EdgeFunction ef) <- getEdgeFunctions analysis
-                (path, dest) <- ef n
-                return $ pathToEdges path newNode dest
-            IntermediateNode _ _ -> S.empty
-    in
     let newWork = S.union waitedWork edgesFromEf in
     let history' = S.foldl (\acc -> \e -> S.insert e acc) history newWork in
     let wq' = S.foldl Q.pushBack wq newWork in
     let analysis' = analysis { workQueue = WorkQueue wq',
                                activeNodes = ActiveNodes activeNodes',
+                               activeUserNodes = activeUserNodes',
+                               activeNodesByClass = activeNodesByClass',
                                history = History history',
                                waitlist = Waitlist waitlist'
                              }
@@ -186,7 +228,7 @@ addQuestion question analysis =
   let newQuestions = Questions $ S.insert question ogQuestions in
   let terminus = StaticTerminus internalTarget in
   let internalSource =
-        if actions == [] then
+        if L.null actions then
           internalTarget
         else
           IntermediateNode actions terminus
@@ -367,7 +409,7 @@ closureStep analysis =
                     -- Since the source of the new edges will definitely be
                     -- having live source nodes (or can we assume the path will
                     -- always be alive?)
-                    let newActives = S.fromList $
+                    let newIntermediateActives = S.fromList $
                           MB.mapMaybe
                             (\e ->
                               case e of
@@ -398,7 +440,8 @@ closureStep analysis =
                                  workQueue = WorkQueue finalWq,
                                  history = History finalHistory,
                                  activeNodes =
-                                    ActiveNodes (S.union newActives actives)
+                                    ActiveNodes (S.union newIntermediateActives
+                                                         actives)
                                }
                   Pop se ->
                     let pushSrcs = findPushEdgesByDestAndElement (n1, se) g in
@@ -471,7 +514,7 @@ closureStep analysis =
                     in
                     {-- NOTE: Marking the IntermediateNodes as active --}
                     let fullEdgesLst = concat rawEdgesLsts in
-                    let newActives = S.fromList $
+                    let newIntermediateActives = S.fromList $
                           MB.mapMaybe
                             (\e ->
                               case e of
@@ -493,7 +536,8 @@ closureStep analysis =
                     analysis { graph = g',
                                workQueue = WorkQueue finalWq,
                                activeNodes =
-                                 ActiveNodes (S.union newActives activeNodes)
+                                 ActiveNodes (S.union newIntermediateActives
+                                                      activeNodes)
                              }
               (UntargetedEdge (e@(UntargetedDynPopEdge n1 pa)), wq') ->
                 let g' = if (S.member e (getUntargetedDynPopEdges g)) then
@@ -511,7 +555,7 @@ closureStep analysis =
                 in
                 {-- NOTE: Marking the IntermediateNodes as active --}
                 let fullEdgesLst = concat rawEdgesLsts in
-                let newActives = S.fromList $
+                let newIntermediateActives = S.fromList $
                       MB.mapMaybe
                         (\e ->
                           case e of
@@ -533,7 +577,8 @@ closureStep analysis =
                 analysis { graph = g',
                            workQueue = WorkQueue finalWq,
                            activeNodes =
-                             ActiveNodes (S.union newActives activeNodes)
+                             ActiveNodes (S.union newIntermediateActives
+                                                  activeNodes)
                          }
       in
       let maybeAnswerEdge = do

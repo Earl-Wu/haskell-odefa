@@ -12,12 +12,14 @@ module PdsReachability.Specification where
 import GHC.Exts (Constraint)
 
 type family Node a :: *
+type family NodeClass a :: *
 type family Element a :: *
 type family TargetedDynPop a :: *
 type family UntargetedDynPop a :: *
 
 type TargetedSpecIs c a =  -- :: (* -> Constraint) -> * -> Constraint
   ((c (Node a),
+    c (NodeClass a),
     c (Element a),
     c (TargetedDynPop a))
    :: Constraint

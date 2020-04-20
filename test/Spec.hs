@@ -14,6 +14,7 @@ import PdsReachability.Structure
 data Test
 
 type instance Node Test = String
+type instance NodeClass Test = ()
 type instance Element Test = String
 type instance TargetedDynPop Test = DynPop
 type instance UntargetedDynPop Test = UntDynPop
@@ -80,7 +81,7 @@ setEdgeFunctions ::
  Analysis Test ->
  Analysis Test
 setEdgeFunctions efs analysis =
-  foldl (flip addEdgeFunction) analysis efs
+  foldl (flip $ addEdgeFunction Nothing) analysis efs
 
 -- fullAnalysis :: Graph Test -> Analysis Test
 -- fullAnalysis g =
@@ -89,13 +90,16 @@ setEdgeFunctions efs analysis =
 --   let initialAnalysis = S.foldl (\acc -> \e -> updateAnalysis e acc) (emptyAnalysis doDynPop1 actives) edges in
 --   fullClosure initialAnalysis
 
+emptyTestAnalysis :: Analysis Test
+emptyTestAnalysis = emptyAnalysis (const ()) doDynPop1 doUntargetedDynPop1
+
 graphClosure :: Graph Test -> Graph Test
 graphClosure g =
   let edges = S.map (\e -> RegularEdge e) (getEdges g) in
   let utedges = S.map (\e -> UntargetedEdge e) (getUntargetedDynPopEdges g) in
   -- TODO: Handle utedges
   let actives = ActiveNodes $ S.map (\(RegularEdge (Edge n1 _ _)) -> n1) edges in
-  let preparedAnalysis = setActiveNodes actives (emptyAnalysis doDynPop1 doUntargetedDynPop1) in
+  let preparedAnalysis = setActiveNodes actives emptyTestAnalysis in
   let initialAnalysis = S.foldl (\acc -> \e -> addAnalysisEdge e acc) preparedAnalysis edges in
   let fullAnalysis = fullClosure initialAnalysis in
   getGraph fullAnalysis
@@ -114,7 +118,7 @@ graphClosureWithActives actives g =
   let utedges = S.map (\e -> UntargetedEdge e) (getUntargetedDynPopEdges g) in
   -- TODO: Handle utedges
   let initialAnalysis = S.foldl (\acc -> \e -> addAnalysisEdge e acc)
-        (emptyAnalysis doDynPop1 doUntargetedDynPop1) edges in
+        (emptyTestAnalysis) edges in
   let preparedAnalysis = setActiveNodes actives initialAnalysis in
   let fullAnalysis = fullClosure preparedAnalysis in
   getGraph fullAnalysis
@@ -127,7 +131,7 @@ graphClosureWithEdgeFun1 efs g =
   -- TODO: Handle utedges
   let actives = ActiveNodes $ S.map (\(RegularEdge (Edge n1 _ _)) -> n1) edges in
   let preparedAnalysis =
-        (emptyAnalysis doDynPop1 doUntargetedDynPop1)
+        (emptyTestAnalysis)
         & setEdgeFunctions efs
         & setActiveNodes actives
   in
@@ -143,7 +147,7 @@ graphClosureWithEdgeFun2 efs g =
   -- TODO: Handle utedges
   let actives = ActiveNodes $ S.map (\(RegularEdge (Edge n1 _ _)) -> n1) edges in
   let preparedAnalysis =
-        (emptyAnalysis doDynPop1 doUntargetedDynPop1)
+        (emptyTestAnalysis)
         & setActiveNodes actives
   in
   let initialAnalysis =
@@ -163,7 +167,7 @@ graphClosureWithFullSpec actives efs g =
   let utedges = S.map (\e -> UntargetedEdge e) (getUntargetedDynPopEdges g) in
   -- TODO: Handle utedges
   let initialAnalysis = S.foldl (\acc -> \e -> addAnalysisEdge e acc)
-        (emptyAnalysis doDynPop1 doUntargetedDynPop1) edges in
+        (emptyTestAnalysis) edges in
   let preparedAnalysis =
         setActiveNodes actives initialAnalysis
         & setEdgeFunctions efs
