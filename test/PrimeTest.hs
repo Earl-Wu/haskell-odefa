@@ -87,13 +87,17 @@ primeFactorCountAnalysis =
                     [(Path [Pop (Bottom '$')], StaticTerminus (UserNode state))]
                   Number _ -> []
             ))
-  & addStart start [Push (Bottom '$')]
+  & addQuestion (Question (start, [Push (Bottom '$')]))
   & fullClosure
 
 primeFactorCountTest :: [State]
 primeFactorCountTest =
   let start = Number 12 in
-  getReachableNodes start [Push (Bottom '$')] primeFactorCountAnalysis
+  case (getReachableNodes
+          (Question (start, [Push (Bottom '$')]))
+          primeFactorCountAnalysis) of
+    Just res -> res
+    Nothing -> []
 
 primeTest :: TestTree
 primeTest =

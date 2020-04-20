@@ -31,6 +31,15 @@ data ActiveNodes a = ActiveNodes (S.Set (InternalNode a))
 deriving instance (SpecIs Show a) => (Show (ActiveNodes a))
 deriving instance (SpecIs Eq a) => (Eq (ActiveNodes a))
 
+newtype Question a = Question (Node a, [StackAction a])
+deriving instance (SpecIs Show a) => (Show (Question a))
+deriving instance (SpecIs Eq a) => (Eq (Question a))
+deriving instance (SpecIs Ord a) => (Ord (Question a))
+
+data Questions a = Questions (S.Set (Question a))
+deriving instance (SpecIs Show a) => (Show (Questions a))
+deriving instance (SpecIs Eq a) => (Eq (Questions a))
+
 data EdgeFunction a = EdgeFunction (Node a -> [(Path a, Terminus a)])
 
 data Waitlist a = Waitlist (M.Map (InternalNode a) (S.Set (GeneralEdges a)))
@@ -43,6 +52,7 @@ data Analysis a =
       graph :: Graph a,
       workQueue :: WorkQueue a,
       activeNodes :: ActiveNodes a,
+      questions :: Questions a,
       history :: History a,
       waitlist :: Waitlist a,
       edgeFunctions :: [EdgeFunction a]
@@ -70,6 +80,9 @@ getUntargetedDynPop analysis = doUntargetedDynPop analysis
 getActiveNodes :: Analysis a -> ActiveNodes a
 getActiveNodes analysis = activeNodes analysis
 
+getQuestions :: Analysis a -> Questions a
+getQuestions analysis = questions analysis
+
 getHistory :: Analysis a -> History a
 getHistory analysis = history analysis
 
@@ -89,6 +102,7 @@ emptyAnalysis doTargetedDynPop doUntargetedDynPop =
              graph = emptyGraph,
              workQueue = WorkQueue Q.empty,
              activeNodes = ActiveNodes S.empty,
+             questions = Questions S.empty,
              history = History S.empty,
              waitlist = Waitlist M.empty,
              edgeFunctions = []
@@ -164,9 +178,12 @@ addActiveNode newNode analysis =
     in
     propagateLiveness newNode analysis'
 
-addStart :: (Spec a) => Node a -> [StackAction a] -> Analysis a -> Analysis a
-addStart node actions analysis =
+addQuestion :: (Spec a) => Question a -> Analysis a -> Analysis a
+addQuestion question analysis =
+  let Question(node, actions) = question in
   let internalTarget = UserNode node in
+  let Questions ogQuestions = getQuestions analysis in
+  let newQuestions = Questions $ S.insert question ogQuestions in
   let terminus = StaticTerminus internalTarget in
   let internalSource =
         if actions == [] then
@@ -180,27 +197,28 @@ addStart node actions analysis =
           internalSource
           (StaticTerminus internalTarget)
   in
-  analysis
-  & addActiveNode internalSource
-  & addAnalysisEdges edges
+  let analysis' =
+        analysis
+        & addActiveNode internalSource
+        & addAnalysisEdges edges
+  in analysis' { questions = newQuestions }
 
-getReachableNodes ::
-  (Spec a) =>
-  Node a -> [StackAction a] -> Analysis a -> [Node a]
-getReachableNodes node actions analysis =
+getReachableNodes :: (Spec a) => Question a -> Analysis a -> Maybe [Node a]
+getReachableNodes question analysis =
+  let Question(node,actions) = question in
   let lookupNode = IntermediateNode actions (StaticTerminus (UserNode node)) in
   -- Look up Nop edges in the analysis graph and filter out the IntermediateNodes
-  let ActiveNodes actives = getActiveNodes analysis in
+  let Questions qs = getQuestions analysis in
   let g = getGraph analysis in
-  if (S.member lookupNode actives) then
+  if (S.member question qs) then
     let rawRes = findNopEdgesBySource lookupNode g in
     S.filter (\n -> case n of UserNode _ -> True
                               IntermediateNode _ _ -> False
              ) rawRes
     & S.map (\n -> case n of UserNode res -> res)
     & S.toList
-  -- TODO: check error handling
-  else undefined
+    & return
+  else Nothing
 
 pathToEdges :: Path a -> InternalNode a -> Terminus a -> [GeneralEdges a]
 pathToEdges (Path path) src dest =
@@ -245,11 +263,12 @@ propagateLiveness node analysis =
   in
   S.foldl (\acc -> \n -> addActiveNode n acc) analysis connectedNonActiveNodes
 
-closureStep :: (Spec a) => Analysis a -> Analysis a
+closureStep ::
+  (Spec a) => Analysis a -> (Analysis a, Maybe (Question a, Node a))
 closureStep analysis =
   -- If the workqueue is empty, we can simply return the analysis unchanged
   let WorkQueue wq = getWorkQueue analysis in
-  if (null wq) then analysis
+  if (null wq) then (analysis, Nothing)
     else
       -- Extracting basic information from the analysis
       let g = getGraph analysis in
@@ -259,209 +278,288 @@ closureStep analysis =
       let ActiveNodes ogActives = getActiveNodes analysis in
       -- If the edge is in the workqueue, we have not done work on it
       let work = MB.fromJust (Q.popFront wq) in
-      case work of
-        (RegularEdge (e@(Edge n1 sa n2)), wq') ->
-      -- It's true that all edges in the workqueue should have active sources,
-      -- but we never explicitly change the active status of IntermediateNodes
-      -- I think we can either change the activeness here or when we are creating
-      -- the path. I don't know which one is the correct move
-      -- Maybe for the sake of invariance, we should change it in the path
-      -- creation phase?
-      {-- NOTE: Change activeness upon encoutering an edge in the workQueue --}
-      -- let actives = if (S.member n1 ogActives) then ogActives else (S.insert n1 ogActives) in
-      -- let analysis' = analysis { activeNodes = actives } in
-      {-- NOTE: Edges in workQueue always have active sources --}
-          let analysis' = analysis { workQueue = WorkQueue wq' } in
-          {-- NOTE: It's ok to use the original graph g in the following computation
-                    because the edge does not close with itself --}
-          let g' = if (S.member e (getEdges g)) then g else (addEdge e g) in
-          case sa of
-            Push se ->
-              -- Push edge propagates liveness
-              let analysis'' = propagateLiveness n2 (addActiveNode n2 analysis') in
-              -- NOTE: here we need to get the latest work queue,
-              -- because propagateLiveness might alter the it
-              let WorkQueue curWq = getWorkQueue analysis'' in
-              let popDests = findPopEdgesBySourceAndElement (n2, se) g in
-              let nopDests = findNopEdgesBySource n2 g in
-              let dynPopDests = findTargetedDynPopEdgesBySource n2 g in
-              let untargetedDynPops = findUntargetedDynPopEdgesBySource n2 g in
-              -- Closure rule: push + pop ==> nop
-              let (wq1, history1) = S.foldl
-                    (\(accWq, accHistory) -> \dest ->
-                      let newEdge = RegularEdge $ Edge n1 Nop dest in
-                      if S.member newEdge accHistory then (accWq, accHistory) else
-                        (Q.pushBack accWq newEdge, S.insert newEdge accHistory))
-                    (curWq, history) popDests in
-              -- Closure rule: push + nop ==> push
-              let (wq2, history2) = S.foldl
-                    (\(accWq, accHistory) -> \dest ->
-                      let newEdge = RegularEdge $ Edge n1 sa dest in
-                      if S.member newEdge accHistory then (accWq, accHistory) else
-                        (Q.pushBack accWq newEdge, S.insert newEdge accHistory))
-                    (wq1, history1) nopDests in
-              -- Closure rule: push + untargeted pop ==> ...
-              let untargetedDynPopsMnd = S.toList untargetedDynPops in
-              let rawUntargetedEdgesLsts =
-                    do
-                      f <- untargetedDynPopsMnd
-                      (singlePath, terminus) <- doUntargetedDynPop f se
-                      return $ pathToEdges singlePath n1 terminus
-              in
-              -- Closure rule: push + targeted pop ==> ...
-              let dynPopDestsMnd = S.toList $ S.map (\(dest, f) -> (StaticTerminus dest, f)) dynPopDests in
-              let rawTargetedEdgesLsts =
-                    do
-                      (dest, f) <- dynPopDestsMnd
-                      let pathLst = doTargetedDynPop f se
-                      singlePath <- pathLst
-                      return $ pathToEdges singlePath n1 dest
-              in
-              -- Concatenate all of the paths from dynamic pops
-              let fullEdgesLst =
-                    concat rawTargetedEdgesLsts ++ concat rawUntargetedEdgesLsts
-              in
-              {-- NOTE: Marking the IntermediateNodes as active --}
-              -- Since the source of the new edges will definitely be
-              -- having live source nodes (or can we assume the path will always be alive?)
-              let newActives = S.fromList $
-                    MB.mapMaybe (\e ->
-                                   case e of RegularEdge (Edge src _ _) ->
-                                               case src of IntermediateNode _ _ -> Just src
-                                                           otherwise -> Nothing
-                                             UntargetedEdge (UntargetedDynPopEdge src _) ->
-                                               case src of IntermediateNode _ _ -> Just src
-                                                           otherwise -> Nothing)
-                    fullEdgesLst
-              in
-              let newEdgesSet = S.fromList fullEdgesLst in
-              {-- NOTE: Not marking the IntermediateNodes as active --}
-              -- let newEdgesSet = S.fromList $ concat $ ND.toList rawEdgesLsts in
-              let (finalWq, finalHistory) = S.foldl
-                    (\(accWq, accHistory) -> \e ->
-                      if S.member e accHistory then (accWq, accHistory) else
-                        (Q.pushBack accWq e, S.insert e accHistory)) (wq2, history2) newEdgesSet
-              in
-              let ActiveNodes actives = getActiveNodes analysis'' in
-              analysis'' { graph = g',
+      let resultAnalysis =
+            case work of
+              (RegularEdge (e@(Edge n1 sa n2)), wq') ->
+                {- It's true that all edges in the workqueue should have active
+                   sources, but we never explicitly change the active status of
+                   IntermediateNodes.  I think we can either change the
+                   activeness here or when we are creating the path. I don't
+                   know which one is the correct move.  Maybe for the sake of
+                   invariance, we should change it in the path creation phase?
+                -}
+                {-- NOTE: Edges in workQueue always have active sources --}
+                let analysis' = analysis { workQueue = WorkQueue wq' } in
+                {-- NOTE: It's ok to use the original graph g in the following
+                          computation because the edge does not close with
+                          itself --}
+                let g' =
+                      if (S.member e (getEdges g)) then g else (addEdge e g)
+                in
+                case sa of
+                  Push se ->
+                    -- Push edge propagates liveness
+                    let analysis'' =
+                          propagateLiveness n2 (addActiveNode n2 analysis')
+                    in
+                    -- NOTE: here we need to get the latest work queue,
+                    -- because propagateLiveness might alter the it
+                    let WorkQueue curWq = getWorkQueue analysis'' in
+                    let popDests = findPopEdgesBySourceAndElement (n2, se) g in
+                    let nopDests = findNopEdgesBySource n2 g in
+                    let dynPopDests = findTargetedDynPopEdgesBySource n2 g in
+                    let untargetedDynPops =
+                          findUntargetedDynPopEdgesBySource n2 g
+                    in
+                    -- Closure rule: push + pop ==> nop
+                    let (wq1, history1) = S.foldl
+                          (\(accWq, accHistory) -> \dest ->
+                            let newEdge = RegularEdge $ Edge n1 Nop dest in
+                            if S.member newEdge accHistory then
+                              (accWq, accHistory)
+                            else
+                              ( Q.pushBack accWq newEdge
+                              , S.insert newEdge accHistory
+                              )
+                          )
+                          (curWq, history) popDests
+                    in
+                    -- Closure rule: push + nop ==> push
+                    let (wq2, history2) = S.foldl
+                          (\(accWq, accHistory) -> \dest ->
+                            let newEdge = RegularEdge $ Edge n1 sa dest in
+                            if S.member newEdge accHistory then
+                              (accWq, accHistory)
+                            else
+                              ( Q.pushBack accWq newEdge
+                              , S.insert newEdge accHistory
+                              )
+                          )
+                          (wq1, history1) nopDests
+                    in
+                    -- Closure rule: push + untargeted pop ==> ...
+                    let untargetedDynPopsMnd = S.toList untargetedDynPops in
+                    let rawUntargetedEdgesLsts =
+                          do
+                            f <- untargetedDynPopsMnd
+                            (singlePath, terminus) <- doUntargetedDynPop f se
+                            return $ pathToEdges singlePath n1 terminus
+                    in
+                    -- Closure rule: push + targeted pop ==> ...
+                    let dynPopDestsMnd =
+                          S.toList $
+                          S.map (\(dest, f) ->
+                                    (StaticTerminus dest, f)) dynPopDests
+                    in
+                    let rawTargetedEdgesLsts =
+                          do
+                            (dest, f) <- dynPopDestsMnd
+                            let pathLst = doTargetedDynPop f se
+                            singlePath <- pathLst
+                            return $ pathToEdges singlePath n1 dest
+                    in
+                    -- Concatenate all of the paths from dynamic pops
+                    let fullEdgesLst =
+                          concat rawTargetedEdgesLsts ++
+                          concat rawUntargetedEdgesLsts
+                    in
+                    {-- NOTE: Marking the IntermediateNodes as active --}
+                    -- Since the source of the new edges will definitely be
+                    -- having live source nodes (or can we assume the path will
+                    -- always be alive?)
+                    let newActives = S.fromList $
+                          MB.mapMaybe
+                            (\e ->
+                              case e of
+                                RegularEdge (Edge src _ _) ->
+                                  case src of
+                                    IntermediateNode _ _ -> Just src
+                                    otherwise -> Nothing
+                                UntargetedEdge (UntargetedDynPopEdge src _) ->
+                                  case src of
+                                    IntermediateNode _ _ -> Just src
+                                    otherwise -> Nothing)
+                          fullEdgesLst
+                    in
+                    let newEdgesSet = S.fromList fullEdgesLst in
+                    {-- NOTE: Not marking the IntermediateNodes as active --}
+                    let (finalWq, finalHistory) =
+                          S.foldl
+                            (\(accWq, accHistory) -> \e ->
+                              if S.member e accHistory then
+                                (accWq, accHistory)
+                              else
+                                (Q.pushBack accWq e, S.insert e accHistory)
+                            )
+                            (wq2, history2) newEdgesSet
+                    in
+                    let ActiveNodes actives = getActiveNodes analysis'' in
+                    analysis'' { graph = g',
+                                 workQueue = WorkQueue finalWq,
+                                 history = History finalHistory,
+                                 activeNodes =
+                                    ActiveNodes (S.union newActives actives)
+                               }
+                  Pop se ->
+                    let pushSrcs = findPushEdgesByDestAndElement (n1, se) g in
+                    let ActiveNodes activeNodes = getActiveNodes analysis' in
+                    let History history = getHistory analysis' in
+                    let activepushSrcs =
+                          S.filter (\s -> S.member s activeNodes) pushSrcs
+                    in
+                    let (finalWq, finalHistory) = S.foldl
+                          (\(accWq, accHistory) -> \src ->
+                            let newEdge = RegularEdge $ Edge src Nop n2 in
+                            if (S.member newEdge accHistory) then
+                              (accWq, accHistory)
+                            else
+                              ( Q.pushBack accWq newEdge
+                              , S.insert newEdge accHistory))
+                          (wq', history) activepushSrcs
+                    in
+                    analysis' { graph = g',
+                                workQueue = WorkQueue finalWq,
+                                history = History finalHistory
+                               }
+                  Nop ->
+                    -- Nop edge propagates liveness
+                    let analysis'' =
+                          propagateLiveness n2 (addActiveNode n2 analysis')
+                    in
+                    let WorkQueue curWq = getWorkQueue analysis'' in
+                    let ActiveNodes activeNodes = getActiveNodes analysis'' in
+                    let nopDests = findNopEdgesBySource n2 g in
+                    let wq1 = S.foldl
+                          (\acc -> \dest ->
+                            let newEdge = RegularEdge $ Edge n1 Nop dest in
+                            if (S.member newEdge history) then acc else
+                              Q.pushBack acc newEdge)
+                          curWq nopDests in
+                    let nopSrcs = findNopEdgesByDest n1 g in
+                    let activenopSrcs =
+                          S.filter (\s -> S.member s activeNodes) nopSrcs
+                    in
+                    let wq2 = S.foldl
+                          (\acc -> \src ->
+                            let newEdge = RegularEdge $ Edge src Nop n2 in
+                            if (S.member newEdge history) then acc else
+                              Q.pushBack acc newEdge)
+                          wq1 activenopSrcs in
+                    let pushSrcsAndElms = findPushEdgesByDest n1 g in
+                    let activePushSrcsAndElms =
+                          S.filter
+                            (\(s, _) -> S.member s activeNodes)
+                            pushSrcsAndElms
+                    in
+                    let finalWq = S.foldl
+                          (\acc -> \(src, elm) ->
+                            let newEdge = RegularEdge $ Edge src (Push elm) n2 in
+                            if (S.member newEdge history) then acc else
+                              Q.pushBack acc newEdge)
+                          wq2 activePushSrcsAndElms in
+                    analysis'' { graph = g',
+                                 workQueue = WorkQueue finalWq }
+                  DynamicPop f ->
+                    let pushSrcsAndElms = S.toList $ findPushEdgesByDest n1 g in
+                    let rawEdgesLsts =
+                          do
+                            (src, elm) <- pushSrcsAndElms
+                            let pathLst = doTargetedDynPop f elm
+                            singlePath <- pathLst
+                            return $
+                              pathToEdges singlePath src (StaticTerminus n2)
+                    in
+                    {-- NOTE: Marking the IntermediateNodes as active --}
+                    let fullEdgesLst = concat rawEdgesLsts in
+                    let newActives = S.fromList $
+                          MB.mapMaybe
+                            (\e ->
+                              case e of
+                                RegularEdge (Edge src _ _) ->
+                                  case src of
+                                    IntermediateNode _ _ -> Just src
+                                    otherwise -> Nothing
+                                UntargetedEdge (UntargetedDynPopEdge src _) ->
+                                  case src of
+                                    IntermediateNode _ _ -> Just src
+                                    otherwise -> Nothing
+                            )
+                            fullEdgesLst
+                    in
+                    let newEdgesSet = S.fromList fullEdgesLst in
+                    {-- NOTE: Not marking the IntermediateNodes as active --}
+                    let finalWq = S.foldl Q.pushBack wq' newEdgesSet in
+                    let ActiveNodes activeNodes = getActiveNodes analysis in
+                    analysis { graph = g',
+                               workQueue = WorkQueue finalWq,
+                               activeNodes =
+                                 ActiveNodes (S.union newActives activeNodes)
+                             }
+              (UntargetedEdge (e@(UntargetedDynPopEdge n1 pa)), wq') ->
+                let g' = if (S.member e (getUntargetedDynPopEdges g)) then
+                           g
+                         else
+                           addUntargetedDynPopEdge e g
+                in
+                let pushSrcsAndElms = S.toList $ findPushEdgesByDest n1 g in
+                let rawEdgesLsts =
+                      do
+                        (src, elm) <- pushSrcsAndElms
+                        let pathTerminusLst = doUntargetedDynPop pa elm
+                        (singlePath, singleTerminus) <- pathTerminusLst
+                        return $ pathToEdges singlePath src singleTerminus
+                in
+                {-- NOTE: Marking the IntermediateNodes as active --}
+                let fullEdgesLst = concat rawEdgesLsts in
+                let newActives = S.fromList $
+                      MB.mapMaybe
+                        (\e ->
+                          case e of
+                            RegularEdge (Edge src _ _) ->
+                              case src of
+                                IntermediateNode _ _ -> Just src
+                                otherwise -> Nothing
+                            UntargetedEdge (UntargetedDynPopEdge src _) ->
+                              case src of
+                                IntermediateNode _ _ -> Just src
+                                otherwise -> Nothing
+                        )
+                        fullEdgesLst
+                in
+                let newEdgesSet = S.fromList fullEdgesLst in
+                {-- NOTE: Not marking the IntermediateNodes as active --}
+                let finalWq = S.foldl Q.pushBack wq' newEdgesSet in
+                let ActiveNodes activeNodes = getActiveNodes analysis in
+                analysis { graph = g',
                            workQueue = WorkQueue finalWq,
-                           history = History finalHistory,
-                           activeNodes = ActiveNodes (S.union newActives actives)
+                           activeNodes =
+                             ActiveNodes (S.union newActives activeNodes)
                          }
-            Pop se ->
-              let pushSrcs = findPushEdgesByDestAndElement (n1, se) g in
-              let ActiveNodes activeNodes = getActiveNodes analysis' in
-              let History history = getHistory analysis' in
-              let activepushSrcs = S.filter (\s -> S.member s activeNodes) pushSrcs in
-              let (finalWq, finalHistory) = S.foldl
-                    (\(accWq, accHistory) -> \src ->
-                      let newEdge = RegularEdge $ Edge src Nop n2 in
-                      if (S.member newEdge accHistory) then (accWq, accHistory) else
-                        (Q.pushBack accWq newEdge, S.insert newEdge accHistory))
-                    (wq', history) activepushSrcs in
-              analysis' { graph = g',
-                          workQueue = WorkQueue finalWq,
-                          history = History finalHistory
-                         }
-            Nop ->
-              -- Nop edge propagates liveness
-              let analysis'' = propagateLiveness n2 (addActiveNode n2 analysis') in
-              let WorkQueue curWq = getWorkQueue analysis'' in
-              let ActiveNodes activeNodes = getActiveNodes analysis'' in
-              let nopDests = findNopEdgesBySource n2 g in
-              let wq1 = S.foldl
-                    (\acc -> \dest ->
-                      let newEdge = RegularEdge $ Edge n1 Nop dest in
-                      if (S.member newEdge history) then acc else
-                        Q.pushBack acc newEdge)
-                    curWq nopDests in
-              let nopSrcs = findNopEdgesByDest n1 g in
-              let activenopSrcs = S.filter (\s -> S.member s activeNodes) nopSrcs in
-              let wq2 = S.foldl
-                    (\acc -> \src ->
-                      let newEdge = RegularEdge $ Edge src Nop n2 in
-                      if (S.member newEdge history) then acc else
-                        Q.pushBack acc newEdge)
-                    wq1 activenopSrcs in
-              let pushSrcsAndElms = findPushEdgesByDest n1 g in
-              let activePushSrcsAndElms = S.filter (\(s, _) -> S.member s activeNodes) pushSrcsAndElms in
-              let finalWq = S.foldl
-                    (\acc -> \(src, elm) ->
-                      let newEdge = RegularEdge $ Edge src (Push elm) n2 in
-                      if (S.member newEdge history) then acc else
-                        Q.pushBack acc newEdge)
-                    wq2 activePushSrcsAndElms in
-              analysis'' { graph = g',
-                           workQueue = WorkQueue finalWq }
-            DynamicPop f ->
-              let pushSrcsAndElms = S.toList $ findPushEdgesByDest n1 g in
-              let rawEdgesLsts =
-                    do
-                      (src, elm) <- pushSrcsAndElms
-                      let pathLst = doTargetedDynPop f elm
-                      singlePath <- pathLst
-                      return $ pathToEdges singlePath src (StaticTerminus n2)
-              in
-              {-- NOTE: Marking the IntermediateNodes as active --}
-              let fullEdgesLst = concat rawEdgesLsts in
-              let newActives = S.fromList $
-                    MB.mapMaybe (\e ->
-                                   case e of RegularEdge (Edge src _ _) ->
-                                               case src of IntermediateNode _ _ -> Just src
-                                                           otherwise -> Nothing
-                                             UntargetedEdge (UntargetedDynPopEdge src _) ->
-                                               case src of IntermediateNode _ _ -> Just src
-                                                           otherwise -> Nothing
-                                ) fullEdgesLst in
-              let newEdgesSet = S.fromList fullEdgesLst in
-              {-- NOTE: Not marking the IntermediateNodes as active --}
-              -- let newEdgesSet = S.fromList $ concat $ ND.toList rawEdgesLsts in
-              let finalWq = S.foldl Q.pushBack wq' newEdgesSet in
-              let ActiveNodes activeNodes = getActiveNodes analysis in
-              analysis { graph = g',
-                         workQueue = WorkQueue finalWq,
-                         activeNodes = ActiveNodes (S.union newActives activeNodes)
-                       }
-        (UntargetedEdge (e@(UntargetedDynPopEdge n1 pa)), wq') ->
-          let g' = if (S.member e (getUntargetedDynPopEdges g)) then
-                     g
-                   else
-                     addUntargetedDynPopEdge e g
-          in
-          let pushSrcsAndElms = S.toList $ findPushEdgesByDest n1 g in
-          let rawEdgesLsts =
-                do
-                  (src, elm) <- pushSrcsAndElms
-                  let pathTerminusLst = doUntargetedDynPop pa elm
-                  (singlePath, singleTerminus) <- pathTerminusLst
-                  return $ pathToEdges singlePath src singleTerminus
-          in
-          {-- NOTE: Marking the IntermediateNodes as active --}
-          let fullEdgesLst = concat rawEdgesLsts in
-          let newActives = S.fromList $
-                MB.mapMaybe (\e ->
-                               case e of RegularEdge (Edge src _ _) ->
-                                           case src of IntermediateNode _ _ -> Just src
-                                                       otherwise -> Nothing
-                                         UntargetedEdge (UntargetedDynPopEdge src _) ->
-                                           case src of IntermediateNode _ _ -> Just src
-                                                       otherwise -> Nothing
-                            ) fullEdgesLst in
-          let newEdgesSet = S.fromList fullEdgesLst in
-          {-- NOTE: Not marking the IntermediateNodes as active --}
-          -- let newEdgesSet = S.fromList $ concat $ ND.toList rawEdgesLsts in
-          let finalWq = S.foldl Q.pushBack wq' newEdgesSet in
-          let ActiveNodes activeNodes = getActiveNodes analysis in
-          analysis { graph = g',
-                     workQueue = WorkQueue finalWq,
-                     activeNodes = ActiveNodes (S.union newActives activeNodes)
-                   }
-
+      in
+      let maybeAnswerEdge = do
+            let (RegularEdge (Edge n1 sa n2), _) = work
+            guard $ sa == Nop
+            let maybeQuestionFromInternalNode internalNode =
+                  case internalNode of
+                    UserNode n -> return $ Question (n, [])
+                    IntermediateNode actionList (StaticTerminus dest) ->
+                      do
+                        Question(n', actions) <-
+                          maybeQuestionFromInternalNode dest
+                        return $ Question(n', actionList ++ actions)
+                    IntermediateNode _ (DynamicTerminus _) -> mzero
+            question <- maybeQuestionFromInternalNode n1
+            let Questions qs = getQuestions analysis
+            guard $ S.member question qs
+            let UserNode dest = n2
+            return (question, dest)
+      in
+      (resultAnalysis, maybeAnswerEdge)
 
 fullClosure :: (Spec a) => Analysis a -> Analysis a
 fullClosure analysis =
   let doTargetedDynPop = getTargetedDynPop analysis in
-  let analysis' = closureStep analysis in
+  let (analysis', _) = closureStep analysis in
   let WorkQueue wq' = getWorkQueue analysis' in
   if (null wq') then analysis' else fullClosure analysis'
 

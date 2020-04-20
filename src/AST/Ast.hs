@@ -100,3 +100,10 @@ data AnnotatedClause
   | ExitClause AbstractVar AbstractVar AbstractCls
   | StartClause AbstractVar
   | EndClause AbstractVar deriving (Show, Eq, Ord)
+
+isClauseImmediate :: Clause x v -> Bool
+isClauseImmediate (Clause _ b) =
+  case b of
+    ApplBody _ _ _ -> False
+    ConditionalBody _ _ _ _ -> False
+    otherwise -> True
