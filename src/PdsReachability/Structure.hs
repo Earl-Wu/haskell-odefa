@@ -12,8 +12,9 @@ module PdsReachability.Structure
   InternalNode(..),
   Graph,
   GeneralEdges(..),
-  Terminus(..),
   UntargetedDynPopEdge(..),
+  Terminus(..),
+  Destination(..),
   emptyGraph,
   graphFromEdges,
   addEdge,
@@ -36,8 +37,6 @@ import PdsReachability.Specification
 import qualified Data.Set as S
 import qualified Data.Map as M
 
--- NOTE: Terminus: InternalNode and UntargetedDynPop
-
 data Graph a =
    Graph
       { -- A dictionary stroing all the edges in the graph
@@ -56,7 +55,7 @@ data Graph a =
         pushEdgesByDest :: M.Map (InternalNode a) (S.Set ((InternalNode a), Element a)),
         -- A dictionary storing push edges, key - edge src, val - (edge dest, push element)
         pushEdgesBySource :: M.Map (InternalNode a) (S.Set ((InternalNode a), Element a)),
-        -- A dictionary storing dynamic(UntargetedDynPop a) pop edges, key - edge src, val - (edge dest, dynamic action)
+        -- A dictionary storing dynamic pop edges, key - edge src, val - (edge dest, dynamic action)
         dynPopEdgesBySource :: M.Map (InternalNode a) (S.Set ((InternalNode a), TargetedDynPop a)),
         -- A dictionary storing untargeted pop edges, key - edge src, val - Untargeted Pop action
         untargetedDynPopBySrc :: M.Map (InternalNode a) (S.Set (UntargetedDynPop a))
@@ -65,9 +64,18 @@ deriving instance (SpecIs Eq a) => Eq (Graph a)
 deriving instance (SpecIs Ord a) => Ord (Graph a)
 deriving instance (SpecIs Show a) => Show (Graph a)
 
+-- Destinations which are described to us by the user.
+-- USER
+data Terminus a
+  = StaticTerminus (Node a)
+  | DynamicTerminus (UntargetedDynPop a)
+deriving instance (SpecIs Eq a) => (Eq (Terminus a))
+deriving instance (SpecIs Ord a) => (Ord (Terminus a))
+deriving instance (SpecIs Show a) => (Show (Terminus a))
+
 data InternalNode a
   = UserNode (Node a)
-  | IntermediateNode [StackAction a] (Terminus a)
+  | IntermediateNode [StackAction a] (Destination a)
 deriving instance (SpecIs Eq a) => (Eq (InternalNode a))
 deriving instance (SpecIs Ord a) => (Ord (InternalNode a))
 deriving instance (SpecIs Show a) => (Show (InternalNode a))
@@ -84,12 +92,13 @@ deriving instance (SpecIs Eq a) => (Eq (UntargetedDynPopEdge a))
 deriving instance (SpecIs Ord a) => (Ord (UntargetedDynPopEdge a))
 deriving instance (SpecIs Show a) => (Show (UntargetedDynPopEdge a))
 
-data Terminus a
-  = StaticTerminus (InternalNode a)
-  | DynamicTerminus (UntargetedDynPop a)
-deriving instance (SpecIs Eq a) => (Eq (Terminus a))
-deriving instance (SpecIs Ord a) => (Ord (Terminus a))
-deriving instance (SpecIs Show a) => (Show (Terminus a))
+-- Destinations which are stored internally by the graph data structure.
+data Destination a
+  = StaticDestination (InternalNode a)
+  | DynamicDestination (UntargetedDynPop a)
+deriving instance (SpecIs Eq a) => (Eq (Destination a))
+deriving instance (SpecIs Ord a) => (Ord (Destination a))
+deriving instance (SpecIs Show a) => (Show (Destination a))
 
 data GeneralEdges a
   = RegularEdge (Edge a)
@@ -98,6 +107,7 @@ deriving instance (SpecIs Eq a) => (Eq (GeneralEdges a))
 deriving instance (SpecIs Ord a) => (Ord (GeneralEdges a))
 deriving instance (SpecIs Show a) => (Show (GeneralEdges a))
 
+-- USER
 data StackAction a
   = Push (Element a)
   | Pop (Element a)

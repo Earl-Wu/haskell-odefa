@@ -19,11 +19,15 @@ import qualified Data.Maybe as MB
 import qualified Data.Multimap as MM
 import qualified Data.Dequeue as Q
 
+-- NOTE: TODO List
+-- Getting rid of the constructors
+-- Creating a PdsReachability module file for user interface
+--   Creating an internal file PdsReachability.UserTypes for user data types
+-- Implementing the edge fuctions
+--
+
 data WorkQueue a = WorkQueue (Q.BankersDequeue (GeneralEdges a))
 deriving instance (SpecIs Show a) => (Show (WorkQueue a))
-
-data Path a = Path [StackAction a]
-deriving instance (SpecIs Show a) => (Show (Path a))
 
 data History a = History (S.Set (GeneralEdges a))
 deriving instance (SpecIs Show a) => (Show (History a))
@@ -32,7 +36,15 @@ data ActiveNodes a = ActiveNodes (S.Set (InternalNode a))
 deriving instance (SpecIs Show a) => (Show (ActiveNodes a))
 deriving instance (SpecIs Eq a) => (Eq (ActiveNodes a))
 
-newtype Question a = Question (Node a, [StackAction a])
+-- USER
+data Path a = Path [StackAction a]
+deriving instance (SpecIs Show a) => (Show (Path a))
+
+-- USER
+data EdgeFunction a = EdgeFunction (Node a -> [(Path a, Terminus a)])
+
+-- USER
+data Question a = Question (Node a) [StackAction a]
 deriving instance (SpecIs Show a) => (Show (Question a))
 deriving instance (SpecIs Eq a) => (Eq (Question a))
 deriving instance (SpecIs Ord a) => (Ord (Question a))
@@ -41,10 +53,9 @@ data Questions a = Questions (S.Set (Question a))
 deriving instance (SpecIs Show a) => (Show (Questions a))
 deriving instance (SpecIs Eq a) => (Eq (Questions a))
 
-data EdgeFunction a = EdgeFunction (Node a -> [(Path a, Terminus a)])
-
 data Waitlist a = Waitlist (M.Map (InternalNode a) (S.Set (GeneralEdges a)))
 
+-- USER (black box)
 data Analysis a =
   Analysis
     { doClassify :: (Node a -> NodeClass a),
@@ -109,6 +120,21 @@ getEdgeFunctionsByClass nodeClass analysis =
   MM.find (Just nodeClass) (edgeFunctions analysis) `mappend`
   MM.find Nothing (edgeFunctions analysis)
 
+-- TODO: How do we count number of nodes?
+-- getSize :: Analysis a -> (Int, Int)
+-- getSize analysis =
+--   let g = getGraph analysis in
+--   -- let nodeCount = countNodes (S.toList edges) in
+--   let edgeCount = S.size (getEdges g) + S.size (getUntargetedDynPopEdges g) in
+--   (0, edgeCount)
+
+terminusToDestination :: Terminus a -> Destination a
+terminusToDestination terminus =
+  case terminus of
+    StaticTerminus node -> StaticDestination (UserNode node)
+    DynamicTerminus action -> DynamicDestination action
+
+-- USER
 emptyAnalysis ::
   (Node a -> NodeClass a) ->
   (TargetedDynPop a -> Element a -> [Path a]) ->
@@ -129,8 +155,19 @@ emptyAnalysis classifier doTargetedDynPop doUntargetedDynPop =
              edgeFunctions = MM.empty
            }
 
+-- USER
+addEdge ::
+  forall a. (Spec a) =>
+  Node a -> Path a -> Terminus a -> Analysis a -> Analysis a
+addEdge source path terminus analysis =
+  let destination = terminusToDestination terminus in
+  let generalEdges = pathToEdges path (UserNode source) destination in
+  addAnalysisEdges generalEdges analysis
+
+-- USER
 addEdgeFunction ::
-  forall a. (Spec a) => Maybe (NodeClass a) -> EdgeFunction a -> Analysis a -> Analysis a
+  forall a. (Spec a) =>
+  Maybe (NodeClass a) -> EdgeFunction a -> Analysis a -> Analysis a
 addEdgeFunction maybeNodeClass (rawEf@(EdgeFunction ef)) analysis =
   let WorkQueue wq = getWorkQueue analysis in
   let History history = getHistory analysis in
@@ -145,7 +182,8 @@ addEdgeFunction maybeNodeClass (rawEf@(EdgeFunction ef)) analysis =
         in
         L.concat $ do
           node <- actives
-          (path, dest) <- ef node
+          (path, terminus) <- ef node
+          let dest = terminusToDestination terminus
           return $ pathToEdges path (UserNode node) dest
   in
   let newIntermediateActives = S.fromList $
@@ -198,7 +236,8 @@ addActiveNode newNode analysis =
                     do
                       (EdgeFunction ef) <-
                           getEdgeFunctionsByClass classification analysis
-                      (path, dest) <- ef n
+                      (path, terminus) <- ef n
+                      let dest = terminusToDestination terminus
                       return $ pathToEdges path newNode dest
               in
               ( activeNodesByClass'
@@ -220,35 +259,32 @@ addActiveNode newNode analysis =
     in
     propagateLiveness newNode analysis'
 
+-- USER
 addQuestion :: (Spec a) => Question a -> Analysis a -> Analysis a
 addQuestion question analysis =
-  let Question(node, actions) = question in
+  let Question node actions = question in
   let internalTarget = UserNode node in
   let Questions ogQuestions = getQuestions analysis in
   let newQuestions = Questions $ S.insert question ogQuestions in
-  let terminus = StaticTerminus internalTarget in
+  let destination = StaticDestination internalTarget in
   let internalSource =
         if L.null actions then
           internalTarget
         else
-          IntermediateNode actions terminus
+          IntermediateNode actions destination
   in
-  let edges =
-        pathToEdges
-          (Path actions)
-          internalSource
-          (StaticTerminus internalTarget)
-  in
+  let edges = pathToEdges (Path actions) internalSource destination in
   let analysis' =
         analysis
         & addActiveNode internalSource
         & addAnalysisEdges edges
   in analysis' { questions = newQuestions }
 
+-- USER
 getReachableNodes :: (Spec a) => Question a -> Analysis a -> Maybe [Node a]
 getReachableNodes question analysis =
-  let Question(node,actions) = question in
-  let lookupNode = IntermediateNode actions (StaticTerminus (UserNode node)) in
+  let Question node actions = question in
+  let lookupNode = IntermediateNode actions (StaticDestination (UserNode node)) in
   -- Look up Nop edges in the analysis graph and filter out the IntermediateNodes
   let Questions qs = getQuestions analysis in
   let g = getGraph analysis in
@@ -262,17 +298,20 @@ getReachableNodes question analysis =
     & return
   else Nothing
 
-pathToEdges :: Path a -> InternalNode a -> Terminus a -> [GeneralEdges a]
+pathToEdges :: Path a -> InternalNode a -> Destination a -> [GeneralEdges a]
 pathToEdges (Path path) src dest =
   case path of
     [] ->
       case dest of
-        StaticTerminus destNode -> [RegularEdge $ Edge src Nop destNode]
-        DynamicTerminus upAction -> [UntargetedEdge $ UntargetedDynPopEdge src upAction]
+        StaticDestination destNode ->
+          [RegularEdge $ Edge src Nop destNode]
+        DynamicDestination upAction ->
+          [UntargetedEdge $ UntargetedDynPopEdge src upAction]
     hd : [] ->
       case dest of
-        StaticTerminus destNode -> [RegularEdge $ Edge src hd destNode]
-        DynamicTerminus upAction ->
+        StaticDestination destNode ->
+          [RegularEdge $ Edge src hd destNode]
+        DynamicDestination upAction ->
           let newDest = IntermediateNode [] dest in
           [RegularEdge $ Edge src hd newDest]
     hd : tl ->
@@ -280,8 +319,9 @@ pathToEdges (Path path) src dest =
             case lst of
               hd' : [] ->
                 case dest of
-                  StaticTerminus destNode -> acc ++ [RegularEdge $ Edge prevSrc hd' destNode]
-                  DynamicTerminus upAction ->
+                  StaticDestination destNode ->
+                    acc ++ [RegularEdge $ Edge prevSrc hd' destNode]
+                  DynamicDestination upAction ->
                     let newDest = IntermediateNode [] dest in
                     acc ++ [RegularEdge $ Edge prevSrc hd' newDest]
               hd' : tl' ->
@@ -292,7 +332,6 @@ pathToEdges (Path path) src dest =
       let firstImdNode = IntermediateNode tl dest in
       loop tl [RegularEdge $ Edge src hd firstImdNode] firstImdNode
 
--- TODO: Leave comments to explain the algorithm
 propagateLiveness :: (Spec a) => InternalNode a -> Analysis a -> Analysis a
 propagateLiveness node analysis =
   let g = getGraph analysis in
@@ -305,6 +344,13 @@ propagateLiveness node analysis =
   in
   S.foldl (\acc -> \n -> addActiveNode n acc) analysis connectedNonActiveNodes
 
+-- USER
+isClosed :: Analysis a -> Bool
+isClosed analysis =
+  let WorkQueue wq = getWorkQueue analysis in
+  null wq
+
+-- USER
 closureStep ::
   (Spec a) => Analysis a -> (Analysis a, Maybe (Question a, Node a))
 closureStep analysis =
@@ -336,7 +382,10 @@ closureStep analysis =
                           computation because the edge does not close with
                           itself --}
                 let g' =
-                      if (S.member e (getEdges g)) then g else (addEdge e g)
+                      if (S.member e (getEdges g)) then
+                        g
+                      else
+                        (PdsReachability.Structure.addEdge e g)
                 in
                 case sa of
                   Push se ->
@@ -385,13 +434,14 @@ closureStep analysis =
                           do
                             f <- untargetedDynPopsMnd
                             (singlePath, terminus) <- doUntargetedDynPop f se
-                            return $ pathToEdges singlePath n1 terminus
+                            let destination = terminusToDestination terminus
+                            return $ pathToEdges singlePath n1 destination
                     in
                     -- Closure rule: push + targeted pop ==> ...
                     let dynPopDestsMnd =
                           S.toList $
                           S.map (\(dest, f) ->
-                                    (StaticTerminus dest, f)) dynPopDests
+                                    (StaticDestination dest, f)) dynPopDests
                     in
                     let rawTargetedEdgesLsts =
                           do
@@ -510,7 +560,7 @@ closureStep analysis =
                             let pathLst = doTargetedDynPop f elm
                             singlePath <- pathLst
                             return $
-                              pathToEdges singlePath src (StaticTerminus n2)
+                              pathToEdges singlePath src (StaticDestination n2)
                     in
                     {-- NOTE: Marking the IntermediateNodes as active --}
                     let fullEdgesLst = concat rawEdgesLsts in
@@ -551,7 +601,8 @@ closureStep analysis =
                         (src, elm) <- pushSrcsAndElms
                         let pathTerminusLst = doUntargetedDynPop pa elm
                         (singlePath, singleTerminus) <- pathTerminusLst
-                        return $ pathToEdges singlePath src singleTerminus
+                        let destination = terminusToDestination singleTerminus
+                        return $ pathToEdges singlePath src destination
                 in
                 {-- NOTE: Marking the IntermediateNodes as active --}
                 let fullEdgesLst = concat rawEdgesLsts in
@@ -586,13 +637,13 @@ closureStep analysis =
             guard $ sa == Nop
             let maybeQuestionFromInternalNode internalNode =
                   case internalNode of
-                    UserNode n -> return $ Question (n, [])
-                    IntermediateNode actionList (StaticTerminus dest) ->
+                    UserNode n -> return $ Question n []
+                    IntermediateNode actionList (StaticDestination dest) ->
                       do
-                        Question(n', actions) <-
+                        Question n' actions <-
                           maybeQuestionFromInternalNode dest
-                        return $ Question(n', actionList ++ actions)
-                    IntermediateNode _ (DynamicTerminus _) -> mzero
+                        return $ Question n' (actionList ++ actions)
+                    IntermediateNode _ (DynamicDestination _) -> mzero
             question <- maybeQuestionFromInternalNode n1
             let Questions qs = getQuestions analysis
             guard $ S.member question qs
@@ -601,6 +652,7 @@ closureStep analysis =
       in
       (resultAnalysis, maybeAnswerEdge)
 
+-- USER
 fullClosure :: (Spec a) => Analysis a -> Analysis a
 fullClosure analysis =
   let doTargetedDynPop = getTargetedDynPop analysis in
@@ -622,7 +674,7 @@ addAnalysisEdge edge analysis =
         let WorkQueue wq = getWorkQueue analysis in
         let ActiveNodes activeNodes = getActiveNodes analysis in
         -- We will need to add it to the graph either way, so construct the new graph upfront
-        let g' = addEdge e g in
+        let g' = PdsReachability.Structure.addEdge e g in
         -- If the source of new edge is active, we add it to the workqueue
         if (S.member src activeNodes) then
           let History history = getHistory analysis in
