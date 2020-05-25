@@ -34,6 +34,7 @@ module PdsReachability.Structure
 import AST.Ast
 import Data.Function
 import PdsReachability.Specification
+import PdsReachability.UserDataTypes
 import qualified Data.Set as S
 import qualified Data.Map as M
 
@@ -63,15 +64,6 @@ data Graph a =
 deriving instance (SpecIs Eq a) => Eq (Graph a)
 deriving instance (SpecIs Ord a) => Ord (Graph a)
 deriving instance (SpecIs Show a) => Show (Graph a)
-
--- Destinations which are described to us by the user.
--- USER
-data Terminus a
-  = StaticTerminus (Node a)
-  | DynamicTerminus (UntargetedDynPop a)
-deriving instance (SpecIs Eq a) => (Eq (Terminus a))
-deriving instance (SpecIs Ord a) => (Ord (Terminus a))
-deriving instance (SpecIs Show a) => (Show (Terminus a))
 
 data InternalNode a
   = UserNode (Node a)
@@ -106,16 +98,6 @@ data GeneralEdges a
 deriving instance (SpecIs Eq a) => (Eq (GeneralEdges a))
 deriving instance (SpecIs Ord a) => (Ord (GeneralEdges a))
 deriving instance (SpecIs Show a) => (Show (GeneralEdges a))
-
--- USER
-data StackAction a
-  = Push (Element a)
-  | Pop (Element a)
-  | DynamicPop (TargetedDynPop a)
-  | Nop
-deriving instance (TargetedSpecIs Eq a) => (Eq (StackAction a))
-deriving instance (TargetedSpecIs Ord a) => (Ord (StackAction a))
-deriving instance (TargetedSpecIs Show a) => (Show (StackAction a))
 
 emptyGraph :: Graph a
 emptyGraph

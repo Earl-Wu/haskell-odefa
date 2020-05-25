@@ -1,6 +1,6 @@
 module PlumeAnalysis.Pds.PdsEdgeFunctions where
 
-import PdsReachability.Reachability
+import PdsReachability
 import PlumeAnalysis.Context
 import PlumeAnalysis.PlumeSpecification
 import PlumeAnalysis.Types.PlumeGraph
@@ -12,4 +12,5 @@ createEdgeFunction =
   -- TODO: note that this has to handle both the "createEdgeFunction" from the
   -- original code as well as the original code's
   -- "createDynamicPopActionFunction"
-  undefined
+  -- let CFGEdge n1 n2 = edge in
+    undefined

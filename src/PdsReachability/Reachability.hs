@@ -11,6 +11,8 @@ import Control.Monad
 import Data.Function
 import PdsReachability.Structure
 import PdsReachability.Specification
+import PdsReachability.UserDataTypes
+
 import qualified Data.Either as E
 import qualified Data.List as L
 import qualified Data.Set as S
@@ -18,13 +20,6 @@ import qualified Data.Map as M
 import qualified Data.Maybe as MB
 import qualified Data.Multimap as MM
 import qualified Data.Dequeue as Q
-
--- NOTE: TODO List
--- Getting rid of the constructors
--- Creating a PdsReachability module file for user interface
---   Creating an internal file PdsReachability.UserTypes for user data types
--- Implementing the edge fuctions
---
 
 data WorkQueue a = WorkQueue (Q.BankersDequeue (GeneralEdges a))
 deriving instance (SpecIs Show a) => (Show (WorkQueue a))
@@ -35,19 +30,6 @@ deriving instance (SpecIs Show a) => (Show (History a))
 data ActiveNodes a = ActiveNodes (S.Set (InternalNode a))
 deriving instance (SpecIs Show a) => (Show (ActiveNodes a))
 deriving instance (SpecIs Eq a) => (Eq (ActiveNodes a))
-
--- USER
-data Path a = Path [StackAction a]
-deriving instance (SpecIs Show a) => (Show (Path a))
-
--- USER
-data EdgeFunction a = EdgeFunction (Node a -> [(Path a, Terminus a)])
-
--- USER
-data Question a = Question (Node a) [StackAction a]
-deriving instance (SpecIs Show a) => (Show (Question a))
-deriving instance (SpecIs Eq a) => (Eq (Question a))
-deriving instance (SpecIs Ord a) => (Ord (Question a))
 
 data Questions a = Questions (S.Set (Question a))
 deriving instance (SpecIs Show a) => (Show (Questions a))

@@ -7,10 +7,9 @@ module PlumeAnalysis.PlumeAnalysis where
 import AST.AbstractAstUtils
 import AST.Ast
 import qualified PlumeAnalysis.Context as C
-import PdsReachability.Reachability
-import PdsReachability.Specification
-import PdsReachability.Structure
+import PdsReachability
 import PlumeAnalysis.Pds.PdsEdgeFunctions
+import PlumeAnalysis.Pds.PlumePdsDynamicPopHandler
 import PlumeAnalysis.Pds.PlumePdsStructureTypes
 import PlumeAnalysis.PlumeSpecification
 import PlumeAnalysis.Types.PlumeGraph
@@ -26,24 +25,16 @@ import qualified Data.Multimap as MM
 import qualified Data.Maybe as MB
 import qualified Data.Dequeue as Q
 
--- TODO: Don't keep this
-plumeTargetedDynPop ::
-  TargetedDynPop (PlumePds context) ->
-  Element (PlumePds context) ->
-  [Path (PlumePds context)]
-plumeTargetedDynPop targetedDynPop element = undefined
-
-plumeUntargetedDynPop ::
-  UntargetedDynPop (PlumePds context) ->
-  Element (PlumePds context) ->
-  [(Path (PlumePds context), Terminus (PlumePds context))]
-plumeUntargetedDynPop untargetedDynPop element = undefined
+-- NOTE: TODO List
+-- Implementing the edge fuctions
 
 type Lookup context = (AbstractVar, context, (S.Set Pattern), (S.Set Pattern))
 
+type WireFunction context = AbstractValue -> CFG context -> Maybe (S.Set (CFGEdge context), CFGNode context, CFGNode context, CFGNode context)
+
 data ArgState context
   = ValueFound
-  | ValueNotFound [(PlumeAnalysis context) -> ((PlumeAnalysis context), [CFGEdge context])]
+  | ValueNotFound [(PlumeAnalysis context) -> ((PlumeAnalysis context), S.Set (CFGEdge context))]
 
 data PlumeAnalysis context =
   PlumeAnalysis
@@ -52,7 +43,7 @@ data PlumeAnalysis context =
     , plumeActiveNodes :: S.Set (CFGNode context)
     , plumeEdgesWorklist :: Q.BankersDequeue (CFGEdge context)
     , plumeArgMap :: M.Map (Lookup context) (ArgState context)
-    , plumeWireMap :: M.Map (Lookup context) [AbstractValue -> CFG context -> Maybe ([CFGEdge context], CFGNode context, CFGNode context, CFGNode context)]
+    , plumeWireMap :: MM.Multimap [] (Lookup context) (WireFunction context)
     , plumePredsPeerMap :: MM.Multimap S.Set (CFGNode context) (CFGNode context)
     , plumeSuccsPeerMap :: MM.Multimap S.Set (CFGNode context) (CFGNode context)
     -- , plumeLoggingData :: Maybe (PlumeAnalysisLoggingData)
@@ -173,7 +164,7 @@ createInitialAnalysis e =
           , plumeActiveNodes = S.singleton (CFGNode (StartClause rx) C.empty)
           , plumeEdgesWorklist = Q.fromList (S.toList edges)
           , plumeArgMap = M.empty
-          , plumeWireMap = M.empty
+          , plumeWireMap = MM.empty
           , plumePredsPeerMap = MM.empty
           , plumeSuccsPeerMap = MM.empty
           }
@@ -222,17 +213,18 @@ askQuestion x acl ctx patsp patsn analysis =
                                              ResultState v -> Just v) vals
   in (values, analysis)
 
-contextlessRestrictedValuesOfVariableWithoutClosure ::
+restrictedValuesOfVariableInternal ::
   (C.Context context) =>
   AbstractVar ->
   AnnotatedClause ->
+  context ->
   S.Set Pattern ->
   S.Set Pattern ->
   PlumeAnalysis context ->
   ([AbsFilteredVal], PlumeAnalysis context)
-contextlessRestrictedValuesOfVariableWithoutClosure x acl patsp patsn analysis =
-  let analysis' = prepareQuestion x acl C.empty patsp patsn analysis in
-  askQuestion x acl C.empty patsp patsn analysis'
+restrictedValuesOfVariableInternal x acl ctx patsp patsn analysis =
+  let analysis' = prepareQuestion x acl ctx patsp patsn analysis in
+  askQuestion x acl ctx patsp patsn analysis'
 
 analyzeNote ::
   (C.Context context) =>
@@ -255,7 +247,7 @@ handleArgumentMap ::
   (C.Context context) =>
   (Lookup context) ->
   PlumeAnalysis context ->
-  (PlumeAnalysis context, [CFGEdge context])
+  (PlumeAnalysis context, S.Set (CFGEdge context))
 handleArgumentMap relevantPair analysis =
   let argMap = plumeArgMap analysis in
   if M.member relevantPair argMap
@@ -274,26 +266,26 @@ handleArgumentMap relevantPair analysis =
             (\acc -> \argFun ->
               let (currAnalysis, edges) = acc in
               let (currAnalysis', edges') = argFun currAnalysis in
-              (currAnalysis', edges ++ edges')
-            ) (analysis', []) argFuns
+              (currAnalysis', S.union edges edges')
+            ) (analysis', S.empty) argFuns
     in
     (resAnalysis, newEdges)
-  else (analysis, [])
+  else (analysis, S.empty)
 
 handleWireMap ::
   (C.Context context) =>
   (Lookup context) ->
   AbstractValue ->
   PlumeAnalysis context ->
-  ([CFGEdge context], PlumeAnalysis context)
+  (S.Set (CFGEdge context), PlumeAnalysis context)
 handleWireMap relevantPair varVal analysis =
   let wireMap = plumeWireMap analysis in
   let predsPeerMap = plumePredsPeerMap analysis in
   let succsPeerMap = plumeSuccsPeerMap analysis in
   let g = plumeGraph analysis in
-  if M.member relevantPair wireMap
+  if MM.member relevantPair wireMap
   then
-    let relevantWireFuns = wireMap M.! relevantPair in
+    let relevantWireFuns = wireMap MM.! relevantPair in
     let (totalNewEdges, newPredsPeerMap, newSuccsPeerMap) =
           let foldFun acc wireFun =
                 let (accEdges, accPredsPeerMap, accSuccsPeerMap) = acc in
@@ -301,7 +293,7 @@ handleWireMap relevantPair varVal analysis =
                 case wireFunRes of
                   Nothing -> acc
                   Just (wireEdges, wireCurrNode, wirePredsPeer, wireSuccsPeer) ->
-                    let accEdges' = accEdges ++ wireEdges in
+                    let accEdges' = S.union accEdges wireEdges in
                     let accPredsPeerMap' =
                           MM.append wireCurrNode wirePredsPeer accPredsPeerMap
                     in
@@ -310,12 +302,12 @@ handleWireMap relevantPair varVal analysis =
                     in
                     (accEdges', accPredsPeerMap', accSuccsPeerMap')
           in
-          L.foldl foldFun ([], predsPeerMap, succsPeerMap) relevantWireFuns
+          L.foldl foldFun (S.empty, predsPeerMap, succsPeerMap) relevantWireFuns
     in
     let analysis' = analysis { plumePredsPeerMap = newPredsPeerMap
                              , plumeSuccsPeerMap = newSuccsPeerMap }
     in (totalNewEdges, analysis')
-  else ([], analysis)
+  else (S.empty, analysis)
 
 pdsClosureStep ::
   (C.Context context) =>
@@ -338,9 +330,9 @@ pdsClosureStep analysis =
           let (functionFunEdges, hwmAnalysis) =
                 handleWireMap relevantPair varVal hamAnalysis
           in
-          let totalEdges = argFunEdges ++ functionFunEdges in
+          let totalEdges = S.union argFunEdges functionFunEdges in
           let plumeEdgesWorklist' =
-                L.foldl Q.pushBack (plumeEdgesWorklist analysis) totalEdges
+                S.foldl Q.pushBack (plumeEdgesWorklist analysis) totalEdges
           in
           hwmAnalysis { plumeEdgesWorklist = plumeEdgesWorklist' }
         Nothing -> analysis'
@@ -358,11 +350,11 @@ executeWireFuns ::
   PlumeAnalysis context ->
   [AbstractValue] ->
   Lookup context ->
-  (PlumeAnalysis context, [CFGEdge context])
+  (PlumeAnalysis context, S.Set (CFGEdge context))
 executeWireFuns analysis valuesForWire wireLookupKey =
-  if (L.null valuesForWire) then (analysis, [])
+  if (L.null valuesForWire) then (analysis, S.empty)
   else
-    let wireFunctions = (plumeWireMap analysis) M.! wireLookupKey in
+    let wireFunctions = (plumeWireMap analysis) MM.! wireLookupKey in
     let (newEdges, newPreds, newSuccs) =
           wireFunctions
           & L.map
@@ -375,12 +367,241 @@ executeWireFuns analysis valuesForWire wireLookupKey =
           & L.foldl
             (\(edgeList, predsPeers, succsPeers) ->
              \(currEdges, currCallSite, currEnter, currExit) ->
-                (edgeList ++ currEdges,
+                (S.union edgeList currEdges,
                  MM.append currCallSite currEnter predsPeers,
                  MM.append currCallSite currExit succsPeers
                 )
-            ) ([], plumePredsPeerMap analysis, plumeSuccsPeerMap analysis)
+            ) (S.empty, plumePredsPeerMap analysis, plumeSuccsPeerMap analysis)
     in
     let analysis' = analysis { plumePredsPeerMap = newPreds
                              , plumeSuccsPeerMap = newSuccs }
     in (analysis', newEdges)
+
+addMappingToWireMap ::
+  (C.Context context) =>
+  MM.Multimap [] (Lookup context) (WireFunction context) ->
+  Lookup context ->
+  WireFunction context ->
+  MM.Multimap [] (Lookup context) (WireFunction context)
+addMappingToWireMap currWireMap lookupKey responseFun =
+  MM.append lookupKey responseFun currWireMap
+
+cfgClosureStep ::
+  (C.Context context) =>
+  PlumeAnalysis context ->
+  PlumeAnalysis context
+cfgClosureStep analysis =
+  let workList = plumeEdgesWorklist analysis
+  in
+  if (Q.null workList) then analysis
+  else
+    let qFrontMb = Q.popFront workList in
+    let (newAnalysis, newNiNodes) =
+          case qFrontMb of
+            Just (edgeToAdd, worklist') ->
+              let preAnalysis = analysis { plumeEdgesWorklist = worklist' } in
+              addOneEdge edgeToAdd preAnalysis
+            Nothing -> undefined
+    in
+    let nodeProcessFun accAnalysis node =
+          let argMap = plumeArgMap accAnalysis in
+          let CFGNode acl ctx = node in
+          case acl of
+            UnannotatedClause (absCls@(Clause clauseName (ApplBody applFun applArg annots))) ->
+              let argumentValueResponse =
+                    \currAnalysis ->
+                      let functionValueResponse value graph =
+                            case value of
+                              AbsValueFunction funVal ->
+                                let acontextualCall =
+                                      case (csaContextuality annots) of
+                                        CallSiteContextual -> False
+                                        CallSiteAcontextual -> True
+                                        CallSiteAcontextualFor vars ->
+                                          let FunctionValue (Var param) _ = funVal in
+                                          S.member param vars
+                                in
+                                let newCtx =
+                                      if acontextualCall then ctx
+                                      else C.add absCls ctx
+                                in
+                                let wireResult =
+                                      wireFun newCtx node funVal applArg clauseName graph
+                                in
+                                Just wireResult
+                              otherwise -> Nothing
+                      in
+                      let oldWireMap = plumeWireMap currAnalysis in
+                      let funLookupKey = (applFun, ctx, S.empty, S.empty) in
+                      let newWireMap = addMappingToWireMap oldWireMap funLookupKey functionValueResponse
+                      in
+                      let (lookupRes, analysis') =
+                            restrictedValuesOfVariableInternal applFun acl ctx S.empty S.empty currAnalysis
+                      in
+                      let valuesOfFun =
+                            L.foldl (\currValList -> \currRes ->
+                                        case currRes of
+                                          AbsFilteredVal v _ _ -> v : currValList
+                                    ) [] lookupRes
+                      in
+                      let analysis'' = analysis' { plumeWireMap = newWireMap } in
+                      executeWireFuns analysis'' valuesOfFun funLookupKey
+              in
+              let argLookupKey = (applArg, ctx, S.empty, S.empty) in
+              if (M.member argLookupKey argMap)
+              then
+                let action = argMap M.! (applArg, ctx, S.empty, S.empty)
+                in
+                case action of
+                  ValueFound ->
+                    let (accAnalysis', edgesToAdd) =
+                          argumentValueResponse accAnalysis
+                    in
+                    let newWorklist = S.foldl Q.pushBack (plumeEdgesWorklist accAnalysis) edgesToAdd in
+                    let accAnalysis'' = accAnalysis' { plumeEdgesWorklist = newWorklist }
+                    in
+                    accAnalysis''
+                  ValueNotFound fList ->
+                    let modifiedArgMap =
+                          M.update (\_ -> Just $ ValueNotFound $ argumentValueResponse : fList) argLookupKey argMap
+                    in
+                    let accAnalysis' = accAnalysis { plumeArgMap = modifiedArgMap }
+                    in
+                    accAnalysis'
+              else
+                let (applArgLookupres, accAnalysis') =
+                      restrictedValuesOfVariableInternal applArg acl ctx S.empty S.empty accAnalysis
+                in
+                if (L.null applArgLookupres)
+                then
+                  let newArgMap =
+                        M.insert argLookupKey (ValueNotFound [argumentValueResponse]) argMap
+                  in
+                  let accAnalysis'' = accAnalysis' { plumeArgMap = newArgMap }
+                  in accAnalysis''
+                else
+                  let (accAnalysis'', edgesToAdd) =
+                        argumentValueResponse accAnalysis'
+                  in
+                  let newWorklist =
+                        S.foldl Q.pushBack (plumeEdgesWorklist accAnalysis) edgesToAdd
+                  in
+                  let newArgMap =
+                        M.insert argLookupKey ValueFound argMap
+                  in
+                  let accAnalysis''' =
+                        accAnalysis'' { plumeEdgesWorklist = newWorklist
+                                      , plumeArgMap = newArgMap
+                                      }
+                  in
+                  accAnalysis'''
+            UnannotatedClause (absCls@(Clause x1 (ConditionalBody subject pattern f1 f2))) ->
+              let oldWireMap = plumeWireMap analysis in
+              let posmatchLookupKey = (subject, ctx, S.singleton pattern, S.empty)
+              in
+              let negmatchLookupKey = (subject, ctx, S.empty, S.singleton pattern)
+              in
+              let condSetPosResponse resVal graph =
+                    let _ = resVal in
+                    Just $ wireCond node f1 subject x1 graph
+              in
+              let condSetNegResponse resVal graph =
+                    let _ = resVal in
+                    Just $ wireCond node f2 subject x1 graph
+              in
+              let wireMapWPos =
+                    addMappingToWireMap oldWireMap posmatchLookupKey condSetNegResponse
+              in
+              let wireMapWNeg =
+                    addMappingToWireMap wireMapWPos negmatchLookupKey condSetNegResponse
+              in
+              let analysisWNewWireMap = accAnalysis { plumeWireMap = wireMapWNeg }
+              in
+              let (posLookupRes, posLookupAnalysis) =
+                    restrictedValuesOfVariableInternal subject acl ctx (S.singleton pattern) S.empty analysisWNewWireMap
+              in
+              let valuesOfPosmatch =
+                    L.foldl (\currValList -> \currRes ->
+                                case currRes of
+                                  AbsFilteredVal v _ _ -> v : currValList
+                            ) [] posLookupRes
+              in
+              let (execPosAnalysis, posNewEdges) =
+                    executeWireFuns posLookupAnalysis valuesOfPosmatch posmatchLookupKey
+              in
+              let (patsnLookupRes, patsnLookupAnalysis) =
+                    restrictedValuesOfVariableInternal subject acl ctx S.empty (S.singleton pattern) execPosAnalysis
+              in
+              let valuesOfNegMatch =
+                    L.foldl (\currValList -> \currRes ->
+                                case currRes of
+                                  AbsFilteredVal v _ _ -> v : currValList
+                            ) [] patsnLookupRes
+              in
+              let (execNegAnalysis, negNewEdges) =
+                    executeWireFuns patsnLookupAnalysis valuesOfNegMatch negmatchLookupKey
+              in
+              let totalNewEdges = L.foldl Q.pushBack (plumeEdgesWorklist execNegAnalysis) (S.union posNewEdges negNewEdges)
+              in
+              execNegAnalysis { plumeEdgesWorklist = totalNewEdges }
+            otherwise -> undefined
+    in S.foldl nodeProcessFun newAnalysis newNiNodes
+
+performClosureSteps ::
+  (C.Context context) =>
+  PlumeAnalysis context ->
+  PlumeAnalysis context
+performClosureSteps analysis =
+  let postCfgAnalysis = cfgClosureStep analysis in
+  let postPdsStepsAnalysis = pdsClosure postCfgAnalysis in
+  postPdsStepsAnalysis
+
+isFullyClosed ::
+  (C.Context context) =>
+  PlumeAnalysis context ->
+  Bool
+isFullyClosed analysis =
+  Q.null (plumeEdgesWorklist analysis) &&
+  isClosed (pdsReachability analysis)
+
+performFullClosure ::
+  (C.Context context) =>
+  PlumeAnalysis context ->
+  PlumeAnalysis context
+performFullClosure analysis =
+  if isFullyClosed analysis then analysis
+  else
+    performFullClosure $ performClosureSteps analysis
+
+restrictedValuesOfVariableWithClosure ::
+  (C.Context context) =>
+  AbstractVar ->
+  AnnotatedClause ->
+  context ->
+  S.Set Pattern ->
+  S.Set Pattern ->
+  PlumeAnalysis context ->
+  ([AbsFilteredVal], PlumeAnalysis context)
+restrictedValuesOfVariableWithClosure x acl ctx patsp patsn analysis =
+  let analysis' = prepareQuestion x acl ctx patsp patsn analysis in
+  let analysis'' = performFullClosure analysis' in
+  askQuestion x acl ctx patsp patsn analysis''
+
+valuesOfVariable ::
+  (C.Context context) =>
+  AbstractVar ->
+  AnnotatedClause ->
+  PlumeAnalysis context ->
+  ([AbsFilteredVal], PlumeAnalysis context)
+valuesOfVariable x acl analysis =
+  restrictedValuesOfVariableWithClosure x acl C.empty S.empty S.empty analysis
+
+contextualValuesOfVariable ::
+  (C.Context context) =>
+  AbstractVar ->
+  AnnotatedClause ->
+  context ->
+  PlumeAnalysis context ->
+  ([AbsFilteredVal], PlumeAnalysis context)
+contextualValuesOfVariable x acl ctx analysis =
+  restrictedValuesOfVariableWithClosure x acl ctx S.empty S.empty analysis

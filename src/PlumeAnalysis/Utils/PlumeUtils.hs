@@ -42,31 +42,37 @@ wireFun ::
   AbstractVar ->
   AbstractVar ->
   CFG context ->
-  Either AbstractInterpreterError (S.Set (CFGEdge context), CFGNode context, CFGNode context, CFGNode context)
+  (S.Set (CFGEdge context), CFGNode context, CFGNode context, CFGNode context)
 wireFun newContext siteNode func x1 x2 graph =
   let CFGNode acl _ = siteNode in
   case acl of
      UnannotatedClause abcl ->
         let (FunctionValue x0 (Expr body)) = func in
         let wireInNode = CFGNode (EnterClause x0 x1 abcl) newContext in
-        do
-          endVar <- rv body
-          let startNode = CFGNode (StartClause endVar) newContext
-          let endNode = CFGNode (EndClause endVar) newContext
-          let wireOutNode = CFGNode (ExitClause x2 endVar abcl) newContext
-          let predEdges =
-                preds siteNode graph
-                & S.map (\n -> CFGEdge n wireInNode)
-          let succEdges =
-                succs siteNode graph
-                & S.map (\n -> CFGEdge wireOutNode n)
-          let innerEdges =
-                L.map (\cl -> CFGNode (UnannotatedClause cl) newContext) body
-                & (\lst -> wireInNode : startNode : lst)
-                & flip (++) [endNode, wireOutNode]
-                & edgesFromNodeList
-          let newEdges = S.unions [predEdges, innerEdges, succEdges] -- TODO: Check order
-          return (newEdges, siteNode, wireInNode, wireOutNode)
+        -- do
+          -- endVar <- rv body
+        case rv body of
+          Right endVar ->
+            let startNode = CFGNode (StartClause endVar) newContext in
+            let endNode = CFGNode (EndClause endVar) newContext in
+            let wireOutNode = CFGNode (ExitClause x2 endVar abcl) newContext in
+            let predEdges =
+                  preds siteNode graph
+                  & S.map (\n -> CFGEdge n wireInNode)
+            in
+            let succEdges =
+                  succs siteNode graph
+                  & S.map (\n -> CFGEdge wireOutNode n)
+            in
+            let innerEdges =
+                  L.map (\cl -> CFGNode (UnannotatedClause cl) newContext) body
+                  & (\lst -> wireInNode : startNode : lst)
+                  & flip (++) [endNode, wireOutNode]
+                  & edgesFromNodeList
+            in
+            let newEdges = S.unions [predEdges, innerEdges, succEdges] -- TODO: Check order
+            in (newEdges, siteNode, wireInNode, wireOutNode)
+          Left _ -> undefined
      otherwise -> undefined -- TODO: ... Sorry, I know I'm just avoiding doing work here...
 
 wireCond ::
@@ -76,31 +82,38 @@ wireCond ::
   AbstractVar ->
   AbstractVar ->
   CFG context ->
-  Either AbstractInterpreterError (S.Set (CFGEdge context), CFGNode context, CFGNode context, CFGNode context)
+  (S.Set (CFGEdge context), CFGNode context, CFGNode context, CFGNode context)
+  -- Either AbstractInterpreterError (S.Set (CFGEdge context), CFGNode context, CFGNode context, CFGNode context)
 wireCond siteNode func x1 x2 graph =
   let (CFGNode acl ctx) = siteNode in
   case acl of
     UnannotatedClause abcl ->
       let (FunctionValue x0 (Expr body)) = func in
       let wireInNode = CFGNode (EnterClause x0 x1 abcl) ctx in
-      do
-        endVar <- rv body
-        let startNode = CFGNode (StartClause endVar) ctx
-        let endNode = CFGNode (EndClause endVar) ctx
-        let wireOutNode = CFGNode (ExitClause x2 endVar abcl) ctx
-        let predEdges =
-              preds siteNode graph
-              & S.map (\n -> CFGEdge n wireInNode)
-        let succEdges =
-              succs siteNode graph
-              & S.map (\n -> CFGEdge wireOutNode n)
-        let innerEdges =
-              L.map (\cl -> CFGNode (UnannotatedClause cl) ctx) body
-              & (\lst -> wireInNode : startNode : lst)
-              & flip (++) [endNode, wireOutNode]
-              & edgesFromNodeList
-        let newEdges = S.unions [predEdges, innerEdges, succEdges] -- TODO: Check order
-        return (newEdges, siteNode, wireInNode, wireOutNode)
+      -- do
+      --   endVar <- rv body
+      case rv body of
+        Right endVar ->
+          let startNode = CFGNode (StartClause endVar) ctx in
+          let endNode = CFGNode (EndClause endVar) ctx in
+          let wireOutNode = CFGNode (ExitClause x2 endVar abcl) ctx in
+          let predEdges =
+                preds siteNode graph
+                & S.map (\n -> CFGEdge n wireInNode)
+          in
+          let succEdges =
+                succs siteNode graph
+                & S.map (\n -> CFGEdge wireOutNode n)
+          in
+          let innerEdges =
+                L.map (\cl -> CFGNode (UnannotatedClause cl) ctx) body
+                & (\lst -> wireInNode : startNode : lst)
+                & flip (++) [endNode, wireOutNode]
+                & edgesFromNodeList
+          in
+          let newEdges = S.unions [predEdges, innerEdges, succEdges] -- TODO: Check order
+          in (newEdges, siteNode, wireInNode, wireOutNode)
+        Left _ -> undefined
     otherwise -> undefined -- TODO: ... Sorry, I know I'm just avoiding doing work here...
 
 immediatelyMatchedBy :: AbstractValue -> Maybe (S.Set Pattern)
