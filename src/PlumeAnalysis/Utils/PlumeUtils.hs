@@ -3,9 +3,12 @@
 module PlumeAnalysis.Utils.PlumeUtils where
 
 import AST.Ast
-import AST.AbstractAstUtils
+import AST.AstUtils
+import AST.AbstractAst
 import PlumeAnalysis.Types.PlumeGraph
+import Utils.Exception
 
+import Control.Exception
 import Data.Function
 import qualified Data.Either as E
 import qualified Data.List as L
@@ -33,7 +36,6 @@ edgesFromNodeList nodes =
         hd : next : [] -> S.insert (CFGEdge hd next) acc
         hd : next : tl -> loop (S.insert (CFGEdge hd next) acc) (next : tl)
 
--- TODO: What should the error type be?
 wireFun ::
   (Ord context) =>
   context ->
@@ -49,31 +51,27 @@ wireFun newContext siteNode func x1 x2 graph =
      UnannotatedClause abcl ->
         let (FunctionValue x0 (Expr body)) = func in
         let wireInNode = CFGNode (EnterClause x0 x1 abcl) newContext in
-        -- do
-          -- endVar <- rv body
-        case rv body of
-          Right endVar ->
-            let startNode = CFGNode (StartClause endVar) newContext in
-            let endNode = CFGNode (EndClause endVar) newContext in
-            let wireOutNode = CFGNode (ExitClause x2 endVar abcl) newContext in
-            let predEdges =
-                  preds siteNode graph
-                  & S.map (\n -> CFGEdge n wireInNode)
-            in
-            let succEdges =
-                  succs siteNode graph
-                  & S.map (\n -> CFGEdge wireOutNode n)
-            in
-            let innerEdges =
-                  L.map (\cl -> CFGNode (UnannotatedClause cl) newContext) body
-                  & (\lst -> wireInNode : startNode : lst)
-                  & flip (++) [endNode, wireOutNode]
-                  & edgesFromNodeList
-            in
-            let newEdges = S.unions [predEdges, innerEdges, succEdges] -- TODO: Check order
-            in (newEdges, siteNode, wireInNode, wireOutNode)
-          Left _ -> undefined
-     otherwise -> undefined -- TODO: ... Sorry, I know I'm just avoiding doing work here...
+        let endVar = rv body in
+        let startNode = CFGNode (StartClause endVar) newContext in
+        let endNode = CFGNode (EndClause endVar) newContext in
+        let wireOutNode = CFGNode (ExitClause x2 endVar abcl) newContext in
+        let predEdges =
+              preds siteNode graph
+              & S.map (\n -> CFGEdge n wireInNode)
+        in
+        let succEdges =
+              succs siteNode graph
+              & S.map (\n -> CFGEdge wireOutNode n)
+        in
+        let innerEdges =
+              L.map (\cl -> CFGNode (UnannotatedClause cl) newContext) body
+              & (\lst -> wireInNode : startNode : lst)
+              & flip (++) [endNode, wireOutNode]
+              & edgesFromNodeList
+        in
+        let newEdges = S.unions [predEdges, innerEdges, succEdges]
+        in (newEdges, siteNode, wireInNode, wireOutNode)
+     otherwise -> throw $ InvariantFailureException $ "Error: Call site should be UnannotatedClause"
 
 wireCond ::
   (Ord context) =>
@@ -90,31 +88,27 @@ wireCond siteNode func x1 x2 graph =
     UnannotatedClause abcl ->
       let (FunctionValue x0 (Expr body)) = func in
       let wireInNode = CFGNode (EnterClause x0 x1 abcl) ctx in
-      -- do
-      --   endVar <- rv body
-      case rv body of
-        Right endVar ->
-          let startNode = CFGNode (StartClause endVar) ctx in
-          let endNode = CFGNode (EndClause endVar) ctx in
-          let wireOutNode = CFGNode (ExitClause x2 endVar abcl) ctx in
-          let predEdges =
-                preds siteNode graph
-                & S.map (\n -> CFGEdge n wireInNode)
-          in
-          let succEdges =
-                succs siteNode graph
-                & S.map (\n -> CFGEdge wireOutNode n)
-          in
-          let innerEdges =
-                L.map (\cl -> CFGNode (UnannotatedClause cl) ctx) body
-                & (\lst -> wireInNode : startNode : lst)
-                & flip (++) [endNode, wireOutNode]
-                & edgesFromNodeList
-          in
-          let newEdges = S.unions [predEdges, innerEdges, succEdges] -- TODO: Check order
-          in (newEdges, siteNode, wireInNode, wireOutNode)
-        Left _ -> undefined
-    otherwise -> undefined -- TODO: ... Sorry, I know I'm just avoiding doing work here...
+      let endVar = rv body in
+      let startNode = CFGNode (StartClause endVar) ctx in
+      let endNode = CFGNode (EndClause endVar) ctx in
+      let wireOutNode = CFGNode (ExitClause x2 endVar abcl) ctx in
+      let predEdges =
+            preds siteNode graph
+            & S.map (\n -> CFGEdge n wireInNode)
+      in
+      let succEdges =
+            succs siteNode graph
+            & S.map (\n -> CFGEdge wireOutNode n)
+      in
+      let innerEdges =
+            L.map (\cl -> CFGNode (UnannotatedClause cl) ctx) body
+            & (\lst -> wireInNode : startNode : lst)
+            & flip (++) [endNode, wireOutNode]
+            & edgesFromNodeList
+      in
+      let newEdges = S.unions [predEdges, innerEdges, succEdges]
+      in (newEdges, siteNode, wireInNode, wireOutNode)
+    otherwise -> throw $ InvariantFailureException $ "Error: Call site should be UnannotatedClause"
 
 immediatelyMatchedBy :: AbstractValue -> Maybe (S.Set Pattern)
 immediatelyMatchedBy v =

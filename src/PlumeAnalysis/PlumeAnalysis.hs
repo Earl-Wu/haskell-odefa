@@ -4,8 +4,9 @@
 {-# LANGUAGE TypeFamilies #-}
 module PlumeAnalysis.PlumeAnalysis where
 
-import AST.AbstractAstUtils
+import AST.AbstractAst
 import AST.Ast
+import AST.AstUtils
 import qualified PlumeAnalysis.Context as C
 import PdsReachability
 import PlumeAnalysis.Pds.PdsEdgeFunctions
@@ -142,32 +143,33 @@ addOneEdge edgeIn analysis =
 createInitialAnalysis ::
   forall context.
   (C.Context context) =>
-  ConcreteExpr -> Either AbstractInterpreterError (PlumeAnalysis context)
-createInitialAnalysis e =
-  let Expr cls = liftExpr e in
-  do
-    rx <- rv cls
-    let nodes =
-          cls
-          & L.map (\x -> CFGNode (UnannotatedClause x) C.empty) -- FIXME: What to do with empty contexts?
-          & (\tl -> (CFGNode (StartClause rx) C.empty) : tl)
-          & flip (++) [CFGNode (EndClause rx) C.empty]
-    let edges = edgesFromNodeList nodes
-    let initialReachability =
-          emptyAnalysis id plumeTargetedDynPop plumeUntargetedDynPop
-          & addEdgeFunction Nothing
-              (EdgeFunction $ \state ->
-                  [(Path [Pop $ BottomOfStack], StaticTerminus state)])
-    return $ PlumeAnalysis
-          { plumeGraph = emptyCFG
-          , pdsReachability = initialReachability
-          , plumeActiveNodes = S.singleton (CFGNode (StartClause rx) C.empty)
-          , plumeEdgesWorklist = Q.fromList (S.toList edges)
-          , plumeArgMap = M.empty
-          , plumeWireMap = MM.empty
-          , plumePredsPeerMap = MM.empty
-          , plumeSuccsPeerMap = MM.empty
-          }
+  context -> ConcreteExpr -> PlumeAnalysis context
+createInitialAnalysis emptyCtx e =
+  let Expr cls = transform e in
+  let rx = rv cls in
+  let nodes =
+        cls
+        & L.map (\x -> CFGNode (UnannotatedClause x) emptyCtx) -- FIXME: What to do with empty contexts?
+        & (\tl -> (CFGNode (StartClause rx) emptyCtx) : tl)
+        & flip (++) [CFGNode (EndClause rx) emptyCtx]
+  in
+  let edges = edgesFromNodeList nodes in
+  let initialReachability =
+        emptyAnalysis id plumeTargetedDynPop plumeUntargetedDynPop
+        & addEdgeFunction Nothing
+            (EdgeFunction $ \state ->
+                [(Path [Pop $ BottomOfStack], StaticTerminus state)])
+  in
+  PlumeAnalysis
+    { plumeGraph = emptyCFG
+    , pdsReachability = initialReachability
+    , plumeActiveNodes = S.singleton (CFGNode (StartClause rx) emptyCtx)
+    , plumeEdgesWorklist = Q.fromList (S.toList edges)
+    , plumeArgMap = M.empty
+    , plumeWireMap = MM.empty
+    , plumePredsPeerMap = MM.empty
+    , plumeSuccsPeerMap = MM.empty
+    }
 
 prepareQuestion ::
   (C.Context context) =>
@@ -592,16 +594,18 @@ valuesOfVariable ::
   AbstractVar ->
   AnnotatedClause ->
   PlumeAnalysis context ->
-  ([AbsFilteredVal], PlumeAnalysis context)
+  (S.Set AbsFilteredVal, PlumeAnalysis context)
 valuesOfVariable x acl analysis =
-  restrictedValuesOfVariableWithClosure x acl C.empty S.empty S.empty analysis
-
+  let (valLst, analysis') = restrictedValuesOfVariableWithClosure x acl C.empty S.empty S.empty analysis in
+  (S.fromList valLst, analysis')
+  
 contextualValuesOfVariable ::
   (C.Context context) =>
   AbstractVar ->
   AnnotatedClause ->
   context ->
   PlumeAnalysis context ->
-  ([AbsFilteredVal], PlumeAnalysis context)
+  (S.Set AbsFilteredVal, PlumeAnalysis context)
 contextualValuesOfVariable x acl ctx analysis =
-  restrictedValuesOfVariableWithClosure x acl ctx S.empty S.empty analysis
+  let (valLst, analysis') = restrictedValuesOfVariableWithClosure x acl ctx S.empty S.empty analysis in
+  (S.fromList valLst, analysis')

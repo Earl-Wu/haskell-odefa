@@ -3,6 +3,7 @@
 module PlumeAnalysis.PlumeSpecification where
 
 import PdsReachability
+import PlumeAnalysis.Pds.PlumePdsDynamicPopTypes
 import PlumeAnalysis.Pds.PlumePdsStructureTypes
 import PlumeAnalysis.Types.PlumeGraph
 
@@ -12,6 +13,6 @@ data PlumePds context
 
 type instance Node (PlumePds context) = PdsState context
 type instance NodeClass (PlumePds context) = PdsState context
-type instance Element (PlumePds context) = PdsContinuation context -- FIXME
-type instance TargetedDynPop (PlumePds context) = () -- FIXME
-type instance UntargetedDynPop (PlumePds context) = () -- FIXME
+type instance Element (PlumePds context) = PdsContinuation context
+type instance TargetedDynPop (PlumePds context) = PdsTargetedDynamicPopAction context
+type instance UntargetedDynPop (PlumePds context) = PdsUntargetedDynamicPopAction

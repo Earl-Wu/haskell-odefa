@@ -1,9 +1,15 @@
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE UndecidableInstances #-}
+
 module PlumeAnalysis.Pds.PlumePdsDynamicPopTypes where
 
-import PdsReachability
 import AST.Ast
+import AST.AbstractAst
+import PdsReachability
+import PdsReachability.Specification
 import PlumeAnalysis.Pds.PlumePdsStructureTypes
-import PlumeAnalysis.PlumeSpecification
+import PlumeAnalysis.Types.PlumeGraph
 
 import qualified Data.Set as S
 
@@ -15,17 +21,17 @@ data PdsTargetedDynamicPopAction context
   | StatelessNonmatchingClauseSkip2of2 (PdsContinuation context)
   | ValueCapture1of3
   | ValueCapture2of3 AbsFilteredVal
-  | ValueCapture3of3 AbsFilteredVal (PdsContinuation context) BoundedCaptureSize
+  | ValueCapture3of3 AbsFilteredVal [(PdsContinuation context)] BoundedCaptureSize
   | FunctionClosureLookup AbstractVar AbstractVar
-  | ConditionalClosureLookup AbstractVar AbstractVar Pattern Pattern Bool
+  | ConditionalClosureLookup AbstractVar AbstractVar Pattern Bool
   | RecordProjectionLookup AbstractVar AbstractVar Ident
   | RecordProjection1of2
-  | RecordProjection2of2 AbstractVar (S.Set Pattern) (S.Set Pattern)
+  | RecordProjection2of2 AbstractRec (S.Set Pattern) (S.Set Pattern)
   | ImmediateFilterValidation AbstractVar (S.Set Pattern) AbstractValue
-  | RecordFilterValidation AbstractVar AbstractRec (Node (PlumePds context))
+  | RecordFilterValidation AbstractVar AbstractRec (CFGNode context)
   | EmptyRecordValueDiscovery AbstractVar
-  | BinaryOperatorLookupInit AbstractVar AbstractVar AbstractVar (Node (PlumePds context)) (Node (PlumePds context))
-  | UnaryOperatorLookupInit AbstractVar AbstractVar (Node (PlumePds context))
+  | BinaryOperatorLookupInit AbstractVar AbstractVar AbstractVar (CFGNode context) (CFGNode context)
+  | UnaryOperatorLookupInit AbstractVar AbstractVar (CFGNode context)
   | BinaryOperatorResolution1of4 AbstractVar BinaryOperator
   | BinaryOperatorResolution2of4 AbstractVar BinaryOperator
   | BinaryOperatorResolution3of4 AbstractVar BinaryOperator AbstractValue

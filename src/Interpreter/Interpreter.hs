@@ -1,16 +1,11 @@
 module Interpreter.Interpreter where
 
 import AST.Ast
+import Interpreter.InterpreterAst
 import qualified Data.Map as M
 import qualified Data.List as L
 import qualified Data.Set as S
 import qualified Data.Maybe as MB
-
-type InterpVar = Var FreshIdent
-type InterpVal = ConcreteValue FreshIdent
-type InterpFun = FunctionValue FreshIdent InterpVal
-type InterpCls = Clause FreshIdent InterpVal
-type InterpClsBd = ClauseBody FreshIdent InterpVal
 
 type Environment = M.Map InterpVar InterpVal
 

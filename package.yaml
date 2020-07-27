@@ -26,6 +26,7 @@ dependencies:
 - array
 - bytestring
 - dequeue
+- mtl >= 2.2.2
 - tasty
 - tasty-hunit
 

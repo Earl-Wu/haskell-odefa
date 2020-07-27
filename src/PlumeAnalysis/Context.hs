@@ -1,11 +1,11 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 
-module PlumeAnalysis.Context
-( Context(..)
-) where
+-- TODO: Selective export?
+module PlumeAnalysis.Context where
 
-import AST.Ast
+import AST.AbstractAst
 
+import Data.List as L
 import Data.Set as S
 
 class (Eq c, Ord c, Show c) => Context c where
@@ -20,6 +20,33 @@ instance Context SetContext where
   empty = SetContext S.empty
   add cls (SetContext s) = SetContext (S.insert cls s)
   name = "Set"
+
+newtype UnitListContext = UnitListContext [AbstractCls]
+  deriving (Eq, Ord, Show)
+
+instance Context UnitListContext where
+  empty = UnitListContext []
+  add _ ctx = ctx
+  name = "Unit List"
+
+newtype SingleElementListContext = SingleElementListContext [AbstractCls]
+  deriving (Eq, Ord, Show)
+
+instance Context SingleElementListContext where
+  empty = SingleElementListContext []
+  add cls (SingleElementListContext lst) = SingleElementListContext [cls]
+  name = "Single Element List"
+
+newtype TwoElementListContext = TwoElementListContext [AbstractCls]
+  deriving (Eq, Ord, Show)
+
+instance Context TwoElementListContext where
+  empty = TwoElementListContext []
+  add cls (TwoElementListContext lst) = 
+    case lst of
+      [] -> TwoElementListContext [cls]
+      hd : _ -> TwoElementListContext [cls, hd]
+  name = "Two Element List"
 
 {-
 

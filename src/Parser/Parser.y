@@ -67,7 +67,7 @@ Clauses : Clause ";" Clauses { $1 : $3 }
 
 Clause : Variable "=" ClauseBody { Clause $1 $3 }
 
-Variable : Identifier { Var ($1, Nothing) }
+Variable : Identifier { Var $1 }
 
 Identifier : id { Ident $1 }
 

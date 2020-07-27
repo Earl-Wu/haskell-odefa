@@ -1,6 +1,6 @@
 module PlumeAnalysis.Pds.PlumePdsStructureTypes where
 
-import AST.AbstractAstUtils
+import AST.AbstractAst
 import AST.Ast
 import PlumeAnalysis.Types.PlumeGraph
 

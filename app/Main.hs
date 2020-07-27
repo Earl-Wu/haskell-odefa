@@ -1,6 +1,7 @@
 module Main where
 
 import AST.Ast
+import AST.AstUtils
 import Interpreter.Interpreter
 import Parser.Parser
 import Parser.Lexer
@@ -11,7 +12,7 @@ import Data.Char
 import System.IO
 import qualified Data.Map as M
 
-parseFile :: FilePath -> IO (InterpExpr)
+parseFile :: FilePath -> IO (ConcreteExpr)
 parseFile f = do
   contents <- readFile f
   let tokenList = alexScanTokens contents
@@ -25,10 +26,13 @@ parseFile f = do
 --    [] -> return ()
 --    hd : tl -> handleExpr hd >> handleExprs tl
 --
-handleExpr :: (InterpExpr) -> IO ()
+handleExpr :: (ConcreteExpr) -> IO ()
 handleExpr expr =
   do
-    let res = eval expr
+    -- Make call to the handleExpression in Toploop
+    -- Note that the toploop will print things for us if we give it the right
+    -- callbacks
+    let res = eval $ transform expr
     case res of Left err -> putStrLn (show err)
                 Right (v, env) ->
                   let val = env M.! v in

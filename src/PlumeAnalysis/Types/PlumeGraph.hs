@@ -7,7 +7,7 @@
 
 module PlumeAnalysis.Types.PlumeGraph where
 
-import AST.Ast
+import AST.AbstractAst
 
 import Data.Function
 import qualified Data.List as L

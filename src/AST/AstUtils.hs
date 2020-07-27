@@ -1,10 +1,54 @@
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE UndecidableInstances #-}
+
 module AST.AstUtils where
 
-import AST.Ast
+import Control.Exception
 import Data.Function
 import qualified Data.List as L
 import qualified Data.Set as S
 import qualified Data.Map as M
+
+import AST.Ast
+import Utils.Exception
+
+class AstTransform t1 t2 where
+  transform :: t1 -> t2
+
+instance (AstTransform (Clause x1 v1) (Clause x2 v2))
+      => AstTransform (Expr x1 v1) (Expr x2 v2) where
+  transform (Expr cls) = Expr (L.map transform cls)
+
+instance ( AstTransform (Var x1) (Var x2)
+         , AstTransform (ClauseBody x1 v1) (ClauseBody x2 v2))
+      => AstTransform (Clause x1 v1) (Clause x2 v2) where
+  transform (Clause x b) = Clause (transform x) (transform b)
+
+instance ( AstTransform (Var x1) (Var x2)
+         , AstTransform v1 v2
+         , AstTransform (FunctionValue x1 v1) (FunctionValue x2 v2)
+         )
+      => AstTransform (ClauseBody x1 v1) (ClauseBody x2 v2) where
+  transform b =
+    case b of
+      ValueBody v -> ValueBody (transform v)
+      VarBody x -> VarBody (transform x)
+      ApplBody x x' annots -> ApplBody (transform x) (transform x') annots
+      ConditionalBody x p f1 f2 ->
+        ConditionalBody (transform x) p (transform f1) (transform f2)
+      ProjectionBody x i -> ProjectionBody (transform x) i
+      BinaryOperationBody x1 op x2 -> BinaryOperationBody (transform x1) op (transform x2)
+      UnaryOperationBody op x -> UnaryOperationBody op (transform x)
+
+instance ( AstTransform (Var x1) (Var x2)
+         , AstTransform (Expr x1 v1) (Expr x2 v2))
+      => AstTransform (FunctionValue x1 v1) (FunctionValue x2 v2) where
+  transform (FunctionValue x e) = FunctionValue (transform x) (transform e)
+
+instance ( AstTransform (Var x1) (Var x2) )
+      => AstTransform (RecordValue x1) (RecordValue x2) where
+  transform (RecordValue els) = RecordValue (M.map transform els)
 
 flatten :: ConcreteExpr -> [ConcreteCls]
 flatten (Expr cls) =
@@ -135,11 +179,13 @@ scopeViolations expr =
   checkScopeExpr S.empty expr
   & L.map (\(i1, i2) -> (Var i1, Var i2))
 
-rv :: [ConcreteCls] -> ConcreteVar
-rv cs =
-  let Clause x _ = L.last cs in x
+rv :: [Clause x v] -> Var x
+rv clauses =
+  case clauses of
+    [] -> throw $ InvariantFailureException "Empty clause list provided to rv"
+    otherwise -> let Clause x _ = L.last clauses in x
 
-retv :: ConcreteExpr -> ConcreteVar
+retv :: Expr x v -> Var x
 retv e =
   let Expr cs = e in rv cs
 

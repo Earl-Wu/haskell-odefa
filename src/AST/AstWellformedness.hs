@@ -6,24 +6,24 @@ import Data.Function
 import qualified Data.List as L
 import qualified Data.Set as S
 
-data Illformedness
+data IllFormedness
   = DuplicateVariableBinding ConcreteVar
   | VariableNotInScope (ConcreteVar, ConcreteVar) deriving (Eq, Ord, Show)
 
-checkWellformedExpr :: ConcreteExpr -> Either [Illformedness] ()
+checkWellformedExpr :: ConcreteExpr -> Either [IllFormedness] ()
 checkWellformedExpr expr =
   let exprNonUniqueBindings = nonUniqueBindings expr in
   if not (S.null exprNonUniqueBindings) then
-    let illformedness =
+    let illFormedness =
           exprNonUniqueBindings
           & S.toList
           & L.map (\nonUniqueBinding -> DuplicateVariableBinding nonUniqueBinding)
-    in Left illformedness
+    in Left illFormedness
   else
     let exprScopeViolations = scopeViolations expr in
     if not (L.null exprScopeViolations) then
-      let illformedness =
+      let illFormedness =
             exprScopeViolations
             & L.map (\(programPoint, dependency) -> VariableNotInScope (programPoint, dependency))
-      in Left illformedness
+      in Left illFormedness
     else Right ()
