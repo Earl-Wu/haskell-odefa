@@ -20,6 +20,7 @@ import Utils.Exception
 import Control.Exception
 import Control.Monad.State.Lazy
 import Data.Function
+import Data.Functor.Identity
 import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Data.Maybe as MB
@@ -104,7 +105,6 @@ findErrors analysis =
           (UnaOpBoolNot, AbsValueBool _) -> []
           otherwise -> return $ Toploop.ToploopAnalysisTypes.InvalidUnaryOperation xClause op x filtv
 
--- TODO: Check for signature
 analysisStepGeneral :: forall m. (ToploopMonad m)
                     => AnalysisTask
                     -> ToploopSituation m
@@ -120,16 +120,15 @@ analysisStepGeneral analysisTask situation =
           -- OSKPLUME ->
           -- OSMPLUME ->
   in
-  -- TODO: Implement checkForErrors
   let checkForErrors :: m () = 
-        if (topConfDisableInconsistencyCheck conf) 
+        if (runIdentity $ topConfDisableInconsistencyCheck conf) 
         then return $ ()
         else 
           let errors = findErrors initialAnalysis in
           toploopErrors errors
   in
   let standardizedVariableAnalysisRequest =
-        case (topConfAnalyzeVars conf) of
+        case (runIdentity $ topConfAnalyzeVars conf) of
           AnalyzeNoVariables -> Nothing
           AnalyzeToplevelVariables ->
             Just (
@@ -195,20 +194,20 @@ analysisStepGeneral analysisTask situation =
         in
         sequence <$> mapM mapQuery requests
   in
-  let errors = findErrors initialAnalysis in
-  do
+  let errors = findErrors initialAnalysis in do
     analyses <- case standardizedVariableAnalysisRequest of
                   Nothing -> return []
-                  Just requests -> evalState (analyzeVariableValues requests) initialAnalysis
+                  Just requests -> 
+                    evalState (analyzeVariableValues requests) initialAnalysis
     return $ AnalysisResult analyses errors
-
+    
 doAnalysisSteps :: 
   (ToploopMonad m) => 
   ToploopSituation m -> m AnalysisReport
 doAnalysisSteps situation = 
   let conf = tsConf situation in
-  if topConfDisableInconsistencyCheck conf &&
-     topConfAnalyzeVars conf == AnalyzeNoVariables
+  if (runIdentity $ topConfDisableInconsistencyCheck conf) &&
+     (runIdentity $ topConfAnalyzeVars conf) == AnalyzeNoVariables
   then return $ M.empty
   else
     foldM
@@ -223,7 +222,7 @@ doAnalysisSteps situation =
           case atask of
             PLUME n -> plumeOrSplume
             SPLUME -> plumeOrSplume
-      ) M.empty (topConfAnalyses conf)
+      ) M.empty (runIdentity $ topConfAnalyses conf)
 
 doEvaluation ::
   (ToploopMonad m) =>
@@ -232,7 +231,7 @@ doEvaluation situation hasErrors =
   let callbacks = tsCallbacks situation in
   let conf = tsConf situation in
   let e = tsExpr situation in
-  case topConfEvaluationMode conf of
+  case (runIdentity $ topConfEvaluationMode conf) of
     NeverEvaluate ->
       do
         toploopEvaluationDisabled ()
@@ -247,21 +246,49 @@ doEvaluation situation hasErrors =
               toploopEvaluationResult v env
               return $ EvaluationCompleted v env
           Left str -> return $ EvaluationFailure $ show str
+    AlwaysEvaluate -> 
+      case eval (transform e) of
+          Right (v, env) ->
+            do
+              toploopEvaluationResult v env
+              return $ EvaluationCompleted v env
+          Left str -> return $ EvaluationFailure $ show str
 
--- handleExpression :: 
---   Callbacks m -> Configuration -> Expr -> Result
--- handleExpression cbs conf e =
---   case checkWellformedExpr e of
---     let situation = ToploopSituation { tsExpr = e, tsConf = conf, tsCallbacks = cbs } in
---     let startTime = ? in
---     let report = doAnalysisSteps situation in
---     let endTime = ? in
---     let analysisTimeInMs = 
---       ?
---     in
---     if topConfReportAnalysisTime
---     then 
---       do 
---         toploopAnalysisTimeReport analysisTimeInMs
---     else return ()
-    
+handleExpression :: 
+  (ToploopMonad m) =>
+  Callbacks m -> Configuration -> ConcreteExpr -> m Result
+handleExpression cbs conf e =
+  case checkWellformedExpr e of
+    Left err -> do
+      toploopIllformednesses err
+      return $ Result { illformednesses = err
+      , analysisReport = M.empty
+      , evaluationResult = EvaluationInvalidated
+      }
+    Right _ ->
+      let situation = ToploopSituation { tsExpr = e, tsConf = conf, tsCallbacks = cbs } in
+      let reportM = doAnalysisSteps situation in
+      -- let _ = 
+      --       if topConfReportAnalysisTimes conf
+      --       then 
+      --         do 
+      --           time <- analysisTimeInMs
+      --           toploopAnalysisTimeReport 0
+      --       else return ()
+      -- in
+      do
+        -- Reporting time of analysis
+        (report, runtime) <- time reportM
+        toploopAnalysisTimeReport runtime
+        -- Reporting errors, if any
+        let errorFree = 
+              M.elems report
+              & L.foldl (\acc -> \(AnalysisResult _ errors) -> (L.null errors) && acc) True
+        -- Report the result
+        evaluationResult <- doEvaluation situation (not errorFree)
+        return $ 
+          Result { illformednesses = []
+                , analysisReport = report
+                , evaluationResult = evaluationResult
+                } 
+

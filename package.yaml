@@ -26,9 +26,11 @@ dependencies:
 - array
 - bytestring
 - dequeue
+- deepseq
 - mtl >= 2.2.2
 - tasty
 - tasty-hunit
+- time >= 1.8.0.2
 
 library:
   source-dirs: src

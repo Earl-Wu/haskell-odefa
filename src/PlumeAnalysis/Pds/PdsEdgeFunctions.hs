@@ -154,7 +154,8 @@ createEdgeFunction edge = EdgeFunction $ \state ->
         let nopStates =
               case acl1 of
                 StartClause _ -> [ProgramPointState n1]
-                EndClause _ -> []
+                EndClause _ -> [ProgramPointState n1]
+                otherwise -> []
         in
         let targetedPopEdges =
               targetedDynamicPops

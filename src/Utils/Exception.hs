@@ -1,6 +1,9 @@
 module Utils.Exception
 ( InvariantFailureException(..),
-  InvalidVariableAnalysis(..)
+  InvalidVariableAnalysis(..),
+  MissingCommandLineArgument(..),
+  TooManyCommandLineArguments(..),
+  InvalidArgument(..)
 ) where
 
 import Control.Exception
@@ -14,3 +17,18 @@ data InvalidVariableAnalysis = InvalidVariableAnalysis String
   deriving (Show)
 
 instance Exception InvalidVariableAnalysis
+
+data MissingCommandLineArgument = MissingCommandLineArgument
+  deriving (Show)
+
+instance Exception MissingCommandLineArgument
+
+data TooManyCommandLineArguments = TooManyCommandLineArguments
+  deriving (Show)
+
+instance Exception TooManyCommandLineArguments
+
+data InvalidArgument = InvalidArgument
+  deriving (Show)
+
+instance Exception InvalidArgument

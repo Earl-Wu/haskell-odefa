@@ -12,6 +12,7 @@ import Data.Function
 import PdsReachability.Reachability
 import PdsReachability.Specification
 import PdsReachability.Structure
+import PdsReachability.UserDataTypes
 
 tests :: TestTree
 tests =
@@ -83,31 +84,31 @@ primeFactorCountAnalysis =
                             let leqState = [1..n] in
                             let primesLeqState = L.filter isPrime leqState in
                             let primeFactors = L.filter (isFactor n) primesLeqState in
-                            L.map (\k -> (Path [Push (Prime k)], StaticTerminus (UserNode (Number (div n k))))) primeFactors
+                            L.map (\k -> (Path [Push (Prime k)], StaticTerminus (Number (div n k)))) primeFactors
                           Count _ -> []
                     ))
   & addAnalysisEdge (RegularEdge (Edge (UserNode (Number 1)) Nop (UserNode (Count 0))))
   & addEdgeFunction (Just CountClass)
       (EdgeFunction (\state ->
                 case state of
-                  Count c -> [(Path [DynamicPop (PopAnythingBut(Bottom '$'))], StaticTerminus (UserNode $ Count (c+1)))]
+                  Count c -> [(Path [DynamicPop (PopAnythingBut(Bottom '$'))], StaticTerminus (Count (c+1)))]
                   Number _ -> []
             ))
   & addEdgeFunction (Just CountClass)
       (EdgeFunction (\state ->
                 case state of
                   Count _ ->
-                    [(Path [Pop (Bottom '$')], StaticTerminus (UserNode state))]
+                    [(Path [Pop (Bottom '$')], StaticTerminus state)]
                   Number _ -> []
             ))
-  & addQuestion (Question (start, [Push (Bottom '$')]))
+  & addQuestion (Question start [Push (Bottom '$')])
   & fullClosure
 
 primeFactorCountTest :: [State]
 primeFactorCountTest =
   let start = Number 12 in
   case (getReachableNodes
-          (Question (start, [Push (Bottom '$')]))
+          (Question start [Push (Bottom '$')])
           primeFactorCountAnalysis) of
     Just res -> res
     Nothing -> []

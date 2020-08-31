@@ -40,6 +40,7 @@ data ArgState context
 data PlumeAnalysis context =
   PlumeAnalysis
     { plumeGraph :: CFG context
+    , plumeExpression :: ConcreteExpr
     , pdsReachability :: Analysis (PlumePds context)
     , plumeActiveNodes :: S.Set (CFGNode context)
     , plumeEdgesWorklist :: Q.BankersDequeue (CFGEdge context)
@@ -128,15 +129,11 @@ addOneEdge edgeIn analysis =
             newActiveNodes & S.filter (not . isNodeImmediate)
           )
     in
-    let retAnalysis = PlumeAnalysis
+    let retAnalysis = analysis
           { plumeGraph = plumeGraph'
           , pdsReachability = pdsReachability'
           , plumeActiveNodes = plumeActiveNodes'
           , plumeEdgesWorklist = workList'
-          , plumeArgMap = (plumeArgMap analysis)
-          , plumeWireMap = (plumeWireMap analysis)
-          , plumePredsPeerMap = (plumePredsPeerMap analysis)
-          , plumeSuccsPeerMap = (plumeSuccsPeerMap analysis)
           }
     in (retAnalysis, plumeActiveNonImmediateNodes')
 
@@ -162,6 +159,7 @@ createInitialAnalysis emptyCtx e =
   in
   PlumeAnalysis
     { plumeGraph = emptyCFG
+    , plumeExpression = e
     , pdsReachability = initialReachability
     , plumeActiveNodes = S.singleton (CFGNode (StartClause rx) emptyCtx)
     , plumeEdgesWorklist = Q.fromList (S.toList edges)

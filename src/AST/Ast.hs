@@ -1,11 +1,17 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+
 module AST.Ast where
 
+import GHC.Generics (Generic)
+
+import Control.DeepSeq
 import qualified Data.Map as M
 import qualified Data.Set as S
 
-newtype Ident = Ident String deriving (Show, Eq, Ord)
+newtype Ident = Ident String deriving (Show, Eq, Ord, Generic, NFData)
 
-newtype Var x = Var x deriving (Show, Eq, Ord)
+newtype Var x = Var x deriving (Show, Eq, Ord, Generic, NFData)
 
 newtype FresheningStack = FresheningStack [Ident] deriving (Show, Eq, Ord)
 
@@ -26,33 +32,33 @@ data BinaryOperator
   | BinOpIntLessThanOrEqualTo
   | BinOpEqualTo
   | BinOpBoolAnd
-  | BinOpBoolOr deriving (Show, Eq, Ord)
+  | BinOpBoolOr deriving (Show, Eq, Ord, Generic, NFData)
 
-data UnaryOperator = UnaOpBoolNot deriving (Show, Eq, Ord)
+data UnaryOperator = UnaOpBoolNot deriving (Show, Eq, Ord, Generic, NFData)
 
 data ContextualityCallSiteAnnot
   = CallSiteAcontextual
   | CallSiteAcontextualFor (S.Set Ident)
-  | CallSiteContextual deriving (Show, Eq, Ord)
+  | CallSiteContextual deriving (Show, Eq, Ord, Generic, NFData)
 
 data CallSiteAnnot = CallSiteAnnot { csaContextuality :: ContextualityCallSiteAnnot,
-                                     csaUnit :: () } deriving (Show, Eq, Ord)
+                                     csaUnit :: () } deriving (Show, Eq, Ord, Generic, NFData)
 
 defaultCallSiteAnnot
   = CallSiteAnnot { csaContextuality = CallSiteContextual, csaUnit = ()}
 
 newtype RecordValue x
-  = RecordValue (M.Map Ident (Var x)) deriving (Show, Eq, Ord)
+  = RecordValue (M.Map Ident (Var x)) deriving (Show, Eq, Ord, Generic, NFData)
 
 data FunctionValue x v
-  = FunctionValue (Var x) (Expr x v) deriving (Show, Eq, Ord)
+  = FunctionValue (Var x) (Expr x v) deriving (Show, Eq, Ord, Generic, NFData)
 
 data ConcreteValue x
   = ValueRecord (RecordValue x)
   | ValueFunction (FunctionValue x (ConcreteValue x))
   | ValueInt Int
   | ValueBool Bool
-  | ValueString String deriving (Show, Eq, Ord)
+  | ValueString String deriving (Show, Eq, Ord, Generic, NFData)
 
 data ClauseBody x v
   = ValueBody v
@@ -61,12 +67,12 @@ data ClauseBody x v
   | ConditionalBody (Var x) Pattern (FunctionValue x v) (FunctionValue x v)
   | ProjectionBody (Var x) Ident
   | BinaryOperationBody (Var x) BinaryOperator (Var x)
-  | UnaryOperationBody UnaryOperator (Var x) deriving (Show, Eq, Ord)
+  | UnaryOperationBody UnaryOperator (Var x) deriving (Show, Eq, Ord, Generic, NFData)
 
 data Clause x v
-  = Clause (Var x) (ClauseBody x v) deriving (Show, Eq, Ord)
+  = Clause (Var x) (ClauseBody x v) deriving (Show, Eq, Ord, Generic, NFData)
 
-newtype Expr x v = Expr [(Clause x v)] deriving (Show, Eq, Ord)
+newtype Expr x v = Expr [(Clause x v)] deriving (Show, Eq, Ord, Generic, NFData)
 
 data Pattern
   = RecordPattern (M.Map Ident Pattern)
@@ -74,7 +80,7 @@ data Pattern
   | IntPattern
   | BoolPattern Bool
   | StringPattern
-  | AnyPattern deriving (Show, Eq, Ord)
+  | AnyPattern deriving (Show, Eq, Ord, Generic, NFData)
 
 isClauseImmediate :: Clause x v -> Bool
 isClauseImmediate (Clause _ b) =

@@ -1,10 +1,16 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+
 module Toploop.ToploopTypes where
+
+import GHC.Generics (Generic)
 
 import AST.Ast
 import AST.AbstractAst
-import Interpreter.InterpreterAst
 import AST.AstWellformedness
+import Control.DeepSeq
 import Interpreter.Interpreter
+import Interpreter.InterpreterAst
 import Toploop.ToploopAnalysisTypes
 
 import qualified Data.Map as M
@@ -15,15 +21,15 @@ data AnalysisTask
   | SPLUME
   -- | OSKPLUME
   -- | OSMPLUME
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic, NFData)
 
 newtype LookupVar = LUVar String
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic, NFData)
 
 data GraphPosition
   = ProgramPoint String
   | END
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic, NFData)
 
 -- TODO: refactor so that this can be generic.  Let a user specify the
 --       context in a way dependent upon the context type rather than
@@ -31,13 +37,13 @@ data GraphPosition
 type UserContext = [LookupVar]
 
 data Query = Query LookupVar GraphPosition UserContext
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic, NFData)
 
 data QnA = QnA Query (S.Set AbsFilteredVal)
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic, NFData)
 
 data AnalysisResult = AnalysisResult [QnA] [AnalysisError]
-  deriving (Show)
+  deriving (Show, Generic, NFData)
 
 type AnalysisReport = M.Map AnalysisTask AnalysisResult
 
@@ -61,6 +67,8 @@ data Result
 
 class (Monad m) => ToploopMonad m where
   getCallbacks :: m (Callbacks m)
+  -- Given a monadic operation, how long does it take (in ms) to compute?
+  time :: (NFData x) => m x -> m (x, Integer)
   toploopIllformednesses :: [IllFormedness] -> m ()
   toploopIllformednesses ills = do
     cb <- getCallbacks
@@ -86,6 +94,10 @@ class (Monad m) => ToploopMonad m where
   toploopErrors errors = do
     cb <- getCallbacks
     (cbErrors cb) errors
+  toploopAnalysisTimeReport :: Integer -> m ()
+  toploopAnalysisTimeReport time = do
+    cb <- getCallbacks
+    (cbAnalysisTimeReport cb) time
 
 data Callbacks m
   = Callbacks
@@ -98,12 +110,8 @@ data Callbacks m
         cbEvaluationResult :: InterpVar -> Environment -> m (),
         cbEvaluationFailed :: String -> m (),
         cbEvaluationDisabled :: () -> m (),
-        cbAnalysisTimeReportCallback :: Int -> m ()
+        cbAnalysisTimeReport:: Integer -> m ()
         -- TODO: Do we need this?
         -- cbSourceStatisticsCallback ::           
       }
 
--- noOpCallbacks :: Callbacks m
--- noOpCallbacks =
---   { cbIllformednesses = \_ -> return ()
---   }

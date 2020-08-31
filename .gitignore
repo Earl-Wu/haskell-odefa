@@ -4,3 +4,4 @@ odefa.cabal
 *.lock
 output.txt
 .vsls.json
+toploop

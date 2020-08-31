@@ -10,10 +10,25 @@ plumeAnalysisToStack name = undefined
 
 lastVarOf :: ConcreteExpr -> AbstractVar
 lastVarOf (Expr cls) = 
-    let Clause x _ = L.last cls in x
+  let Clause x _ = L.last cls in x
 
 expressionOf :: PlumeAnalysis context -> ConcreteExpr
-expressionOf = undefined
+expressionOf analysis = plumeExpression analysis
 
-iterateAbstractClauses :: AbstractExpr -> b
-iterateAbstractClauses = undefined
+iterateAbstractClauses :: AbstractExpr -> [AbstractCls]
+iterateAbstractClauses (Expr acls) =
+  acls ++ (L.concat $ L.map (iterateAbstractClauses) $ L.concat $ L.map absExprOfClause acls)
+
+absExprOfClause :: AbstractCls -> [AbstractExpr]
+absExprOfClause (Clause _ b) = 
+  case b of
+    ConditionalBody _ _ (FunctionValue _ e1) (FunctionValue _ e2) ->
+      [e1, e2]
+    ValueBody v -> absExprOfValue v
+    otherwise -> []
+
+absExprOfValue :: AbstractValue -> [AbstractExpr]
+absExprOfValue v =
+  case v of
+    AbsValueFunction (FunctionValue _ e) -> [e]
+    otherwise -> []

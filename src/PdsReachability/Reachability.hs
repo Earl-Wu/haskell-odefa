@@ -614,23 +614,27 @@ closureStep analysis =
                                                   activeNodes)
                          }
       in
-      let maybeAnswerEdge = do
-            let (RegularEdge (Edge n1 sa n2), _) = work
-            guard $ sa == Nop
-            let maybeQuestionFromInternalNode internalNode =
-                  case internalNode of
-                    UserNode n -> return $ Question n []
-                    IntermediateNode actionList (StaticDestination dest) ->
-                      do
-                        Question n' actions <-
-                          maybeQuestionFromInternalNode dest
-                        return $ Question n' (actionList ++ actions)
-                    IntermediateNode _ (DynamicDestination _) -> mzero
-            question <- maybeQuestionFromInternalNode n1
-            let Questions qs = getQuestions analysis
-            guard $ S.member question qs
-            let UserNode dest = n2
-            return (question, dest)
+      -- TODO: Check changes here
+      let maybeAnswerEdge = 
+            -- let (RegularEdge (Edge n1 sa n2), _) = work
+            case work of
+              (RegularEdge (Edge n1 sa n2), _) -> do
+                guard $ sa == Nop
+                let maybeQuestionFromInternalNode internalNode =
+                      case internalNode of
+                        UserNode n -> return $ Question n []
+                        IntermediateNode actionList (StaticDestination dest) ->
+                          do
+                            Question n' actions <-
+                              maybeQuestionFromInternalNode dest
+                            return $ Question n' (actionList ++ actions)
+                        IntermediateNode _ (DynamicDestination _) -> mzero
+                question <- maybeQuestionFromInternalNode n1
+                let Questions qs = getQuestions analysis
+                guard $ S.member question qs
+                let UserNode dest = n2
+                return (question, dest)
+              otherwise -> Nothing
       in
       (resultAnalysis, maybeAnswerEdge)
 

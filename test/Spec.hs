@@ -10,6 +10,7 @@ import Data.Function
 import PdsReachability.Reachability
 import PdsReachability.Specification
 import PdsReachability.Structure
+import PdsReachability.UserDataTypes
 
 data Test
 
@@ -49,7 +50,7 @@ doUntargetedDynPop1 udpf se =
 edgeFun1 :: EdgeFunction Test
 edgeFun1 = EdgeFunction (\n ->
   case n of
-    "b" -> [(Path [Pop "x"], (StaticTerminus $ UserNode "c"))]
+    "b" -> [(Path [Pop "x"], (StaticTerminus "c"))]
     otherwise -> [])
 
 tests :: TestTree
@@ -330,14 +331,14 @@ dynPopTestSet1 =
     [Edge (UserNode "a") (Push "NULLA") (UserNode "b"),
      Edge (UserNode "b") (DynamicPop DynPop1) (UserNode "c"),
      Edge (UserNode "a") (Push "II")
-            (IntermediateNode ([Push "IV", Push "VI", Push "NULLA", Push "I"]) (StaticTerminus $ UserNode "c")),
-     Edge (IntermediateNode ([Push "IV", Push "VI", Push "NULLA", Push "I"]) (StaticTerminus $ UserNode "c"))
-            (Push "IV") (IntermediateNode ([Push "VI", Push "NULLA", Push "I"]) (StaticTerminus $ UserNode "c")),
-     Edge (IntermediateNode ([Push "VI", Push "NULLA", Push "I"]) (StaticTerminus $ UserNode "c"))
-            (Push "VI") (IntermediateNode ([Push "NULLA", Push "I"]) (StaticTerminus $ UserNode "c")),
-     Edge (IntermediateNode ([Push "NULLA", Push "I"]) (StaticTerminus $ UserNode "c"))
-            (Push "NULLA") (IntermediateNode ([Push "I"]) (StaticTerminus $ UserNode "c")),
-     Edge (IntermediateNode ([Push "I"]) (StaticTerminus $ UserNode "c")) (Push "I") (UserNode "c")
+            (IntermediateNode ([Push "IV", Push "VI", Push "NULLA", Push "I"]) (StaticDestination $ UserNode "c")),
+     Edge (IntermediateNode ([Push "IV", Push "VI", Push "NULLA", Push "I"]) (StaticDestination $ UserNode "c"))
+            (Push "IV") (IntermediateNode ([Push "VI", Push "NULLA", Push "I"]) (StaticDestination $ UserNode "c")),
+     Edge (IntermediateNode ([Push "VI", Push "NULLA", Push "I"]) (StaticDestination $ UserNode "c"))
+            (Push "VI") (IntermediateNode ([Push "NULLA", Push "I"]) (StaticDestination $ UserNode "c")),
+     Edge (IntermediateNode ([Push "NULLA", Push "I"]) (StaticDestination $ UserNode "c"))
+            (Push "NULLA") (IntermediateNode ([Push "I"]) (StaticDestination $ UserNode "c")),
+     Edge (IntermediateNode ([Push "I"]) (StaticDestination $ UserNode "c")) (Push "I") (UserNode "c")
     ]
 
 dynPopTestRes1 :: Graph Test
@@ -363,11 +364,11 @@ dynPopTestSet2 =
     [Edge (UserNode "a") (Push "5") (UserNode "b"),
      Edge (UserNode "b") (DynamicPop DynPop2) (UserNode "c"),
      Edge (UserNode "c") (Pop "1") (UserNode "d"),
-     Edge (UserNode "a") (Push "1") (IntermediateNode ([Push "1", Push "1"]) (StaticTerminus $ UserNode "c")),
-     Edge (IntermediateNode ([Push "1", Push "1"]) (StaticTerminus $ UserNode "c")) (Push "1") (IntermediateNode ([Push "1"]) (StaticTerminus $ UserNode "c")),
-     Edge (IntermediateNode ([Push "1"]) (StaticTerminus $ UserNode "c")) (Push "1") (UserNode "c"),
-     Edge (IntermediateNode ([Push "1"]) (StaticTerminus $ UserNode "c")) Nop (UserNode "d"),
-     Edge (IntermediateNode ([Push "1", Push "1"]) (StaticTerminus $ UserNode "c")) (Push "1") (UserNode "d")
+     Edge (UserNode "a") (Push "1") (IntermediateNode ([Push "1", Push "1"]) (StaticDestination $ UserNode "c")),
+     Edge (IntermediateNode ([Push "1", Push "1"]) (StaticDestination $ UserNode "c")) (Push "1") (IntermediateNode ([Push "1"]) (StaticDestination $ UserNode "c")),
+     Edge (IntermediateNode ([Push "1"]) (StaticDestination $ UserNode "c")) (Push "1") (UserNode "c"),
+     Edge (IntermediateNode ([Push "1"]) (StaticDestination $ UserNode "c")) Nop (UserNode "d"),
+     Edge (IntermediateNode ([Push "1", Push "1"]) (StaticDestination $ UserNode "c")) (Push "1") (UserNode "d")
     ]
 
 dynPopTestRes2 :: Graph Test

@@ -2,11 +2,16 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module AST.AbstractAst where
 
+import GHC.Generics (Generic)
+
 import AST.Ast
 import AST.AstUtils
+import Control.DeepSeq
 import Data.Function
 import qualified Data.Either as E
 import qualified Data.List as L
@@ -30,9 +35,9 @@ data AbstractValue
   | AbsValueFunction (FunctionValue Ident AbstractValue)
   | AbsValueInt
   | AbsValueBool Bool
-  | AbsValueString deriving (Show, Eq, Ord)
+  | AbsValueString deriving (Show, Eq, Ord, Generic, NFData)
 
-data AbsFilteredVal = AbsFilteredVal AbstractValue (S.Set Pattern) (S.Set Pattern) deriving (Show, Eq, Ord)
+data AbsFilteredVal = AbsFilteredVal AbstractValue (S.Set Pattern) (S.Set Pattern) deriving (Show, Eq, Ord, Generic, NFData)
 
 data AnnotatedClause
   = UnannotatedClause AbstractCls

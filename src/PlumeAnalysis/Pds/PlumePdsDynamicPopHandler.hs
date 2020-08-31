@@ -43,6 +43,7 @@ plumeTargetedDynPop action element =
           if (not (x == x''))
           then return $ Path $ [DynamicPop $ StatelessNonmatchingClauseSkip2of2 element]
           else mzero
+        otherwise -> mzero
     StatelessNonmatchingClauseSkip2of2 element' ->
       return $ Path $ [Push element, Push element']
     ValueCapture1of3 ->
