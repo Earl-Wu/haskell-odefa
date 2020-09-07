@@ -3,6 +3,8 @@
 
 module Toploop.Toploop where
 
+import GHC.IO.Unsafe
+
 import AST.AbstractAst
 import AST.Ast
 import AST.AstUtils
@@ -19,6 +21,7 @@ import Utils.Exception
 
 import Control.Exception
 import Control.Monad.State.Lazy
+import Control.Monad.Trans.List
 import Data.Function
 import Data.Functor.Identity
 import qualified Data.List as L
@@ -55,55 +58,141 @@ contextualValuesOfVariableFrom x acl ctx analysis =
   let a = performFullClosure analysis in
   contextualValuesOfVariable x acl ctx a
 
+pick :: (Monad m) => [a] -> ListT m a
+pick items = ListT $ return items
+
 findErrors :: 
   (C.Context context) =>
-  PlumeAnalysis context -> [AnalysisError]
-findErrors analysis = 
+  PlumeAnalysis context -> ListT (State SomePlumeAnalysis) AnalysisError
+findErrors analysis =
   let acls = 
         analysis
         & expressionOf
         & transform
         & iterateAbstractClauses
-  in do
-    acl <- acls
+  in
+  do
+    acl <- pick acls
     let (Clause xClause b) = acl
-    let lookup x =
-          let (valList, _) = valuesOfVariableFrom x (UnannotatedClause acl) analysis in
-          S.toList valList
-          & L.map (\(filtv@(AbsFilteredVal v _ _)) -> (v, filtv))
+    let lookup
+          :: AbstractVar
+          -> ListT (State SomePlumeAnalysis) (AbstractValue, AbsFilteredVal)
+        lookup x = do
+          wrappedAnalysis <- lift get
+          valSet <-
+            withSomePlumeAnalysis wrappedAnalysis $ \unwrappedAnalysis ->
+              do
+                let (valSet, unwrappedAnalysis') =
+                      valuesOfVariableFrom
+                        x
+                        (UnannotatedClause acl)
+                        unwrappedAnalysis
+                lift $ put $ SomePlumeAnalysis unwrappedAnalysis'
+                return valSet
+          pick $ 
+            S.toList valSet
+            & L.map (\(filtv@(AbsFilteredVal v _ _)) -> (v, filtv))
     case b of
-      ValueBody _ -> []
-      VarBody _ -> []
-      ConditionalBody _ _ _ _ -> []
+      ValueBody _ -> mzero
+      VarBody _ -> mzero
+      ConditionalBody _ _ _ _ -> mzero
       ApplBody xf xa _ -> do
         (v, filtv) <- lookup xf
         case v of
-          AbsValueFunction _ -> []
-          otherwise ->
-            let filtvs = 
-                  lookup xa
-                  & L.map snd
-                  & S.fromList
-            in return $ ApplicationOfNonFunction xClause xf filtv filtvs
+          AbsValueFunction _ -> mzero
+          otherwise -> do
+            filtvList <- ListT $ (:[]) <$> (runListT $ lookup xa)
+            let filtvs = S.fromList $ L.map snd $ filtvList
+            return $ ApplicationOfNonFunction xClause xf filtv filtvs
       ProjectionBody x i -> do
         (v, filtv) <- lookup x
         case v of
           AbsValueRecord (RecordValue m) ->
-            if M.member i m then []
-            else
+            if M.member i m then mzero else
             return $ ProjectionOfAbsentLabel xClause x filtv i
           otherwise -> return $ ProjectionOfNonRecord xClause x filtv
       BinaryOperationBody x1 op x2 -> do
         (v1, filtv1) <- lookup x1
         (v2, filtv2) <- lookup x2
         let isValid = MB.isJust (abstractBinaryOperation op v1 v2)
-        if isValid then []
+        if isValid then mzero
         else return $ Toploop.ToploopAnalysisTypes.InvalidBinaryOperation xClause op x1 filtv1 x2 filtv2
       UnaryOperationBody op x -> do
         (v, filtv) <- lookup x
         case (op, v) of
-          (UnaOpBoolNot, AbsValueBool _) -> []
+          (UnaOpBoolNot, AbsValueBool _) -> mzero
           otherwise -> return $ Toploop.ToploopAnalysisTypes.InvalidUnaryOperation xClause op x filtv
+
+
+
+
+  -- let findErrorForClause :: AbsCls -> State SomePlumeAnalysis [AnalysisError]
+  --     findErrorForClause acl = do
+  --       let (Clause xClause b) = acl
+  --       let lookup :: AbstractVar -> State SomePlumeAnalysis [AbsFilteredVal]
+  --           lookup x = do
+  --             wrappedAnalysis <- get
+  --             valSet <-
+  --               withSomePlumeAnalysis wrappedAnalysis $ \unwrappedAnalysis ->
+  --                 do
+  --             -- FIXME: not using new analysis here
+  --                   let (valSet, unwrappedAnalysis') =
+  --                     valuesOfVariableFrom
+  --                       x
+  --                       (UnannotatedClause acl)
+  --                       unwrappedAnalysis
+  --                   put $ SomePlumeAnalysis unwrappedAnalysis'
+  --                   return valSet
+  --             return $
+  --               S.toList valSet
+  --               & L.map (\(filtv@(AbsFilteredVal v _ _)) -> (v, filtv))
+  --       case b of
+  --         ValueBody _ -> return []
+  --         VarBody _ -> return []
+  --         ConditionalBody _ _ _ _ -> return []
+  --         ApplBody xf xa _ -> do
+  --           xfvalues <- lookup xf
+  --           let errorsForValue
+  --                 :: (AbstractValue, AbsFilteredVal)
+  --                 -> State SomePlumeAnalysis [AnalysisError]
+  --               errorsForValue (v, filtv) =
+  --                 case v of
+  --                   AbsValueFunction _ -> return $ []
+  --                   otherwise -> do
+  --                     filtvs <- lookup xa
+  --                               & L.map snd
+  --                               & S.fromList
+  --                     return $
+  --                       [ApplicationOfNonFunction xClause xf filtv filtvs]
+  --           sequence $ L.map errorsForValue xfvalues
+  --         ProjectionBody x i -> do
+  --           (v, filtv) <- lookup x
+  --           case v of
+  --             AbsValueRecord (RecordValue m) ->
+  --               if M.member i m then []
+  --               else
+  --               return $ ProjectionOfAbsentLabel xClause x filtv i
+  --             otherwise -> return $ ProjectionOfNonRecord xClause x filtv
+  --         BinaryOperationBody x1 op x2 -> do
+  --           (v1, filtv1) <- lookup x1
+  --           (v2, filtv2) <- lookup x2
+  --           let isValid = MB.isJust (abstractBinaryOperation op v1 v2)
+  --           if isValid then []
+  --           else return $ Toploop.ToploopAnalysisTypes.InvalidBinaryOperation xClause op x1 filtv1 x2 filtv2
+  --         UnaryOperationBody op x -> do
+  --           (v, filtv) <- lookup x
+  --           case (op, v) of
+  --             (UnaOpBoolNot, AbsValueBool _) -> []
+  --             otherwise -> return $ Toploop.ToploopAnalysisTypes.InvalidUnaryOperation xClause op x filtv
+  -- in
+  -- let acls = 
+  --       analysis
+  --       & expressionOf
+  --       & transform
+  --       & iterateAbstractClauses
+  -- in
+  -- let errorComputations = L.map findErrorForClause acls in
+  -- sequence errorComputations
 
 analysisStepGeneral :: forall m. (ToploopMonad m)
                     => AnalysisTask
@@ -113,19 +202,32 @@ analysisStepGeneral analysisTask situation =
   let conf = tsConf situation in
   let callbacks = tsCallbacks situation in
   let e = tsExpr situation in
-  let initialAnalysis =
+  let wrappedInitialAnalysis =
         case analysisTask of
-          -- Plume n -> createInitialAnalysis ListContext
-          SPLUME -> createInitialAnalysis (C.SetContext S.empty) e
+          PLUME n ->
+            case n of
+              0 -> SomePlumeAnalysis $
+                    createInitialAnalysis (C.UnitListContext []) e
+              1 -> SomePlumeAnalysis $
+                    createInitialAnalysis (C.SingleElementListContext []) e
+              _ -> undefined -- FIXME
+          SPLUME -> SomePlumeAnalysis $
+                      createInitialAnalysis (C.SetContext S.empty) e
           -- OSKPLUME ->
           -- OSMPLUME ->
   in
-  let checkForErrors :: m () = 
+  let checkForErrors :: State SomePlumeAnalysis (m [AnalysisError]) =
+        -- TODO: fix the use of wrappedInitialAnalysis below
+        -- this function should be stateful now
         if (runIdentity $ topConfDisableInconsistencyCheck conf) 
-        then return $ ()
-        else 
-          let errors = findErrors initialAnalysis in
-          toploopErrors errors
+        then return $ return []
+        else
+          withSomePlumeAnalysis wrappedInitialAnalysis $ \initialAnalysis ->
+          do
+            errors :: [AnalysisError] <- runListT $ findErrors initialAnalysis
+            return $ do
+              toploopErrors errors
+              return $ errors
   in
   let standardizedVariableAnalysisRequest =
         case (runIdentity $ topConfAnalyzeVars conf) of
@@ -143,7 +245,7 @@ analysisStepGeneral analysisTask situation =
   in
   let analyzeVariableValues :: [Query]
                             -> State
-                                (PlumeAnalysis C.SetContext)
+                                SomePlumeAnalysis
                                 (m [QnA])
       analyzeVariableValues requests =
         let varnameToClauseMap =
@@ -158,7 +260,7 @@ analysisStepGeneral analysisTask situation =
                 Nothing -> throw $ InvalidVariableAnalysis $ "No such variable: " ++ (show ident)
                 Just abscls -> abscls
         in
-        let mapQuery :: Query -> State (PlumeAnalysis C.SetContext) (m QnA)
+        let mapQuery :: Query -> State SomePlumeAnalysis (m QnA)
             mapQuery tryQuery = 
               let (Query varName siteName userContext) = tryQuery in
               let LUVar varIdent = varName in
@@ -169,24 +271,40 @@ analysisStepGeneral analysisTask situation =
                         UnannotatedClause (lookupClauseByIdent (Ident siteNameStr))
                       END -> EndClause $ lastVarOf e
               in
-              let contextStack =
-                    case userContext of
-                      [] -> C.empty
-                      contextVars ->
-                        contextVars
-                        & L.map (\(LUVar wrappedContext) -> wrappedContext)
-                        & L.foldl
-                          (\a -> \e ->
-                            let c = lookupClauseByIdent (Ident e) in
-                            C.add c a
-                          )
-                          C.empty
-              in
               let analysisName = show analysisTask in
               do 
                 curAnalysis <- get
-                let (values, analysis') = contextualValuesOfVariableFrom lookupVar site contextStack curAnalysis
-                put analysis'
+                let nastyHack (values,analysis) =
+                      unsafePerformIO $ do
+                        -- putStrLn $ show $ plumeGraph analysis
+                        -- putStrLn $ show $ pdsReachability analysis
+                        putStrLn "This is the activeNodes: "
+                        putStrLn $ show $ plumeActiveNodes analysis
+                        return (values,analysis)
+                values <- 
+                  withSomePlumeAnalysis curAnalysis $ \unwrappedAnalysis ->
+                    do
+                      let contextStack =
+                            case userContext of
+                              [] -> C.empty
+                              contextVars ->
+                                contextVars
+                                & L.map (\(LUVar wrappedContext) -> wrappedContext)
+                                & L.foldl
+                                  (\a -> \e ->
+                                    let c = lookupClauseByIdent (Ident e) in
+                                    C.add c a
+                                  )
+                                  C.empty
+                      let (values, analysis') =
+                          -- nastyHack $
+                            contextualValuesOfVariableFrom
+                              lookupVar
+                              site
+                              contextStack
+                              unwrappedAnalysis
+                      put $ SomePlumeAnalysis analysis'
+                      return values
                 return $
                   do
                     toploopVariableAnalysis varName siteName userContext values analysisName
@@ -194,11 +312,20 @@ analysisStepGeneral analysisTask situation =
         in
         sequence <$> mapM mapQuery requests
   in
-  let errors = findErrors initialAnalysis in do
-    analyses <- case standardizedVariableAnalysisRequest of
-                  Nothing -> return []
-                  Just requests -> 
-                    evalState (analyzeVariableValues requests) initialAnalysis
+  do -- ToploopMonad
+    (errors, analyses) <-
+      flip evalState wrappedInitialAnalysis $
+      do -- State around ToploopMonad
+        errors <- checkForErrors
+        analyses <-
+          case standardizedVariableAnalysisRequest of
+            Nothing ->
+              -- one return for state, another for ToploopMonad
+              return $ return []
+            Just requests -> analyzeVariableValues requests
+        return $
+          -- We have a pair of ToploopM values but we want a ToploopM of pair
+          (,) <$> errors <*> analyses
     return $ AnalysisResult analyses errors
     
 doAnalysisSteps :: 

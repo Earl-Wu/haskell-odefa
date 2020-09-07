@@ -87,7 +87,7 @@ addOneEdge edgeIn analysis =
                 & S.map (\n -> CFGEdge n1 n)
           in
           let newEdgesFromSuccs =
-                MM.find n2 (plumeSuccsPeerMap analysis)
+                MM.find n1 (plumeSuccsPeerMap analysis)
                 & S.map (\n -> CFGEdge n n2)
           in
           S.foldl Q.pushBack (plumeEdgesWorklist analysis) (S.union newEdgesFromPreds newEdgesFromSuccs)
@@ -106,7 +106,7 @@ addOneEdge edgeIn analysis =
               then findNewActiveNodes fromNodesTail resultSoFar
               else
                 let resultSoFar' = S.insert fromNode resultSoFar in
-                let fromHere = plumeGraph' & succs fromNode in
+                let fromHere = succs fromNode plumeGraph' in
                 findNewActiveNodes
                   (S.toList fromHere ++ fromNodesTail)
                   resultSoFar'
@@ -114,7 +114,7 @@ addOneEdge edgeIn analysis =
     let (plumeActiveNodes', plumeActiveNonImmediateNodes') =
           let maybeNewActiveRootNode =
                 let (CFGEdge nodeLeft nodeRight) = edgeIn in
-                if S.notMember nodeLeft (plumeActiveNodes analysis)
+                if S.notMember nodeRight (plumeActiveNodes analysis)
                 then Just nodeRight
                 else Nothing
           in
@@ -126,7 +126,7 @@ addOneEdge edgeIn analysis =
           let isNodeImmediate (CFGNode clause _) = isImmediate clause in
           (
             S.union (plumeActiveNodes analysis) newActiveNodes,
-            newActiveNodes & S.filter (not . isNodeImmediate)
+             S.filter (not . isNodeImmediate) newActiveNodes
           )
     in
     let retAnalysis = analysis
@@ -545,7 +545,8 @@ cfgClosureStep analysis =
               in
               execNegAnalysis { plumeEdgesWorklist = totalNewEdges }
             otherwise -> undefined
-    in S.foldl nodeProcessFun newAnalysis newNiNodes
+    in 
+    S.foldl nodeProcessFun newAnalysis newNiNodes
 
 performClosureSteps ::
   (C.Context context) =>

@@ -19,16 +19,16 @@ import Utils.Exception
 plumeTargetedDynPop ::
   TargetedDynPop (PlumePds context) ->
   PdsContinuation context ->
-  [Path (PlumePds context)]
+ [Path (PlumePds context)]
 plumeTargetedDynPop action element =
   case action of
     ValueDrop ->
       case element of
-        ContinuationValue _ -> []
+        ContinuationValue _ -> return $ Path []
         otherwise -> mzero
     ValueDiscovery2of2 ->
       case element of
-        BottomOfStack -> []
+        BottomOfStack -> return $ Path []
         otherwise -> mzero
     VariableAliasing x2 x1 ->
       case element of
@@ -67,10 +67,10 @@ plumeTargetedDynPop action element =
               L.map (\x -> Push x) (element : collectedElements)
         in
         return $ Path $ (Push (ContinuationValue fv) : pushes)
-    FunctionClosureLookup x'' xf ->
+    FunctionClosureLookup x'' xf -> 
       case element of
         LookupVar x _ _ ->
-          if (x == x'')
+          if not (x == x'')
           then return $ Path $ [Push element, Push $ LookupVar xf S.empty S.empty]
           else mzero
         otherwise -> mzero

@@ -54,6 +54,7 @@ createEdgeFunction edge = EdgeFunction $ \state ->
                           if not (x' == x3'') then undefined
                           else
                             return (VariableAliasing x x', ProgramPointState n1)
+                        otherwise -> mzero
                     otherwise -> mzero
                  -- Function Bottom: Return Variable
                , case n1 of
@@ -63,6 +64,7 @@ createEdgeFunction edge = EdgeFunction $ \state ->
                           if not (x == x1'') then undefined
                           else
                             return (VariableAliasing x x', ProgramPointState n1)
+                        otherwise -> mzero
                     otherwise -> mzero
                  -- Function Top: Non-local Variable
                , case n1 of
@@ -72,6 +74,7 @@ createEdgeFunction edge = EdgeFunction $ \state ->
                           if not (x' == x3'') then undefined
                           else
                             return (FunctionClosureLookup x'' x2'', ProgramPointState n1)
+                        otherwise -> mzero
                     otherwise -> mzero
                  -- Condtional Wiring
                  -- Conditional Top: Subject Positive
@@ -80,6 +83,7 @@ createEdgeFunction edge = EdgeFunction $ \state ->
                , case n1 of
                     -- This block represents *all* conditional closure handling
                     -- on the entering side.
+                    -- let%orzero (CFGNode (EnterClause x' x1 c) _) = ... i
                     CFGNode (EnterClause x' x1 c) _ ->
                       case c of
                         Clause _ (ConditionalBody x1' p f1 _) ->
@@ -89,6 +93,7 @@ createEdgeFunction edge = EdgeFunction $ \state ->
                             let closureForPositivePath = (f1x == x') in
                             return (ConditionalClosureLookup x' x1 p closureForPositivePath,
                                     ProgramPointState n1)
+                        otherwise -> mzero
                     otherwise -> mzero
                , case n1 of
                     CFGNode (ExitClause x x' c) _ ->
@@ -98,6 +103,7 @@ createEdgeFunction edge = EdgeFunction $ \state ->
                           else
                             return (VariableAliasing x x',
                                     ProgramPointState n1)
+                        otherwise -> mzero
                     otherwise -> mzero
                  -- Record Construction/Destruction
                  -- Record Projection Start

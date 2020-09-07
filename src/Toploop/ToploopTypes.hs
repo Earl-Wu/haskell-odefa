@@ -1,5 +1,8 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Toploop.ToploopTypes where
 
@@ -11,10 +14,24 @@ import AST.AstWellformedness
 import Control.DeepSeq
 import Interpreter.Interpreter
 import Interpreter.InterpreterAst
+import PlumeAnalysis.PlumeAnalysis
+import qualified PlumeAnalysis.Context as C
 import Toploop.ToploopAnalysisTypes
 
 import qualified Data.Map as M
 import qualified Data.Set as S
+
+data SomePlumeAnalysis where
+  SomePlumeAnalysis :: (C.Context c) => PlumeAnalysis c -> SomePlumeAnalysis
+
+withSomePlumeAnalysis ::
+  forall a.
+       SomePlumeAnalysis
+    -> (forall c. (C.Context c) => PlumeAnalysis c -> a)
+    -> a
+withSomePlumeAnalysis somePlumeAnalysis f =
+  case somePlumeAnalysis of
+    SomePlumeAnalysis a -> f a
 
 data AnalysisTask
   = PLUME Int
