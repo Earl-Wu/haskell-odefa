@@ -309,7 +309,7 @@ handleWireMap relevantPair varVal analysis =
                           MM.append wireCurrNode wirePredsPeer accPredsPeerMap
                     in
                     let accSuccsPeerMap' =
-                          MM.append wireCurrNode wireSuccsPeer accPredsPeerMap
+                          MM.append wireCurrNode wireSuccsPeer accSuccsPeerMap
                     in
                     (accEdges', accPredsPeerMap', accSuccsPeerMap')
           in

@@ -43,7 +43,7 @@ extra-deps:
 - dequeue-0.1.12@sha256:547c2a71819dca0ae1bf7c15fb290b39f80d5d9a6f9985a06a1cb8645b578df2,855
 
 # Override default flag values for local packages and extra-deps
-# flags: {}
+flags: {}
 
 # Extra package databases containing global packages
 # extra-package-dbs: []
@@ -65,3 +65,6 @@ extra-deps:
 #
 # Allow a newer minor version of GHC than the snapshot specifies
 # compiler-check: newer-minor
+
+ghc-options:
+  $locals: -Wall -Werror
