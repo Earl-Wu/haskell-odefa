@@ -521,7 +521,7 @@ cfgClosureStep analysis =
                     Just $ wireCond node f2 subject x1 graph
               in
               let wireMapWPos =
-                    addMappingToWireMap oldWireMap posmatchLookupKey condSetNegResponse
+                    addMappingToWireMap oldWireMap posmatchLookupKey condSetPosResponse
               in
               let wireMapWNeg =
                     addMappingToWireMap wireMapWPos negmatchLookupKey condSetNegResponse

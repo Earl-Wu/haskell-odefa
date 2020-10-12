@@ -55,50 +55,20 @@ stdoutCallbacks = Callbacks
       , cbtoploopCFGReport = stdoutCFGReportCallback
       }
 
-newtype MainMonad x = MainMonad (IO x)
-  deriving (Functor, Applicative, Monad)
+-- newtype MainMonad x = MainMonad (IO x)
+--   deriving (Functor, Applicative, Monad)
 -- MainMonad $ State $ Integer -> (IO x, Integer)
--- newtype MainMonad x = MainMonad (State Integer (IO x))
+--newtype MainMonad x = MainMonad (State Integer (IO x))
 
--- f :: a -> b
--- instance Functor MainMonad where
---   fmap f ma = MainMonad $ state $ (\s -> 
---     let MainMonad stateVal = ma in
---     let (ioA, s') = runState stateVal s in
---     let ioRes = do 
---           a <- ioA
---           return $ f a
---     in (ioRes, s')
---     )
+-- newtype MainMonad x = MainMonad (IO (State Integer x))
+-- IO (\s -> (x, s))
+newtype MainMonad x = MainMonad (StateT Integer IO x)
+  deriving (Functor, Applicative, Monad)
 
--- -- TODO: Looks funny; check with Zach
--- instance Applicative MainMonad where
---   pure a = MainMonad $ pure $ pure a
---   -- m (a -> b) -> m a -> m b
---   -- (\s -> (IO (a -> b), s)) -> (\s -> (IO a, s)) -> (\s -> (IO b, s))
---   (<*>) applFun a = MainMonad $ state $ (\s ->
---     let MainMonad statefulFun = applFun in
---     let MainMonad statefulVal = a in
---     let (ioActualFun, s') = runState statefulFun s in
---     let (ioActualVal, s'') = runState statefulVal s' in 
---     let ioRes = do
---           actualFun <- ioActualFun
---           actualVal <- ioActualVal
---           return $ actualFun actualVal
---     in (ioRes, s'')
---     )
-
--- instance Monad MainMonad where
---   return a = pure a
---   -- m a -> (a -> m b) -> m b
---   (>>=) ma f = MainMonad $ state $ (\s ->
---     let MainMonad statefulVal = ma in
---     let (ioActualVal, s') = runState statefulVal s in
---     let ioRes = do
---           actualVal <- ioActualVal
---           let mb = f actualVal
---           runState mb s'
---     )
+{-
+  StateT Integer IO x
+~~Integer -> IO (x, Integer)
+-}
 
 instance ToploopMonad MainMonad where
   -- getCallbacks = MainMonad $ pure $ pure $ stdoutCallbacks
@@ -123,22 +93,23 @@ instance ToploopMonad MainMonad where
   --   )
   time m = 
     do
-      startTime <- MainMonad getSystemTime
+      startTime <- MainMonad $ lift $ getSystemTime
       a <- m
-      endTime <- deepseq a (MainMonad getSystemTime)
+      endTime <- deepseq a (MainMonad $ lift $ getSystemTime)
       let systemTimeToMs (MkSystemTime secs picoseconds) =
             toInteger secs * 1000 + toInteger picoseconds `div` 1000000000
       let startMs = systemTimeToMs startTime
       let endMs = systemTimeToMs endTime
       return (a, endMs - startMs)
-  
-runMainMonad (MainMonad m) = m  
+
+runMainMonad :: MainMonad x -> Integer -> IO x
+runMainMonad (MainMonad m) s = fst <$> (flip runStateT s m)
 
 mainPutStr :: String -> MainMonad ()
-mainPutStr = MainMonad . putStr
+mainPutStr = MainMonad . lift . putStr
 
 mainPutStrLn :: String -> MainMonad ()
-mainPutStrLn = MainMonad . putStrLn
+mainPutStrLn = MainMonad . lift . putStrLn
 
 stdoutIllformednessesCallback :: [IllFormedness] -> MainMonad ()
 stdoutIllformednessesCallback ills = do
@@ -202,17 +173,19 @@ stdoutCFGReportCallback :: SomePlumeAnalysis -> MainMonad ()
 stdoutCFGReportCallback wrappedAnalysis = 
   withSomePlumeAnalysis wrappedAnalysis $ \unwrappedAnalysis ->
     let dotstr = cfgToDotString (plumeGraph unwrappedAnalysis) in
-    let filename = "cfg.dot" in
     MainMonad $ do
-      writeFile filename dotstr
+      n <- get
+      put $ n + 1
+      let filename = "cfg" ++ show n ++ ".dot"
+      lift $ writeFile filename dotstr
 
 handleExpr ::  Configuration -> ConcreteExpr -> IO Result
-handleExpr conf expr = do
+handleExpr conf expr = 
   -- Make call to the handleExpression in Toploop
   -- Note that the toploop will print things for us if we give it the right
   -- callbacks
-  runMainMonad $ handleExpression stdoutCallbacks conf expr
-
+    flip runMainMonad 0 $ handleExpression stdoutCallbacks conf expr
+    
 main :: IO ()
 main =
   do
