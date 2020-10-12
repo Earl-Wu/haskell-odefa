@@ -8,6 +8,7 @@
 module PlumeAnalysis.Types.PlumeGraph where
 
 import AST.AbstractAst
+import qualified PlumeAnalysis.Context as C
 
 import Data.Function
 import qualified Data.List as L
@@ -15,7 +16,10 @@ import qualified Data.Set as S
 import qualified Data.Map as M
 
 data CFGNode context
-  = CFGNode AnnotatedClause context deriving (Show, Eq, Ord)
+  = CFGNode AnnotatedClause context deriving (Eq, Ord, Show)
+
+ppCFGNode :: (C.Context c) => CFGNode c -> String
+ppCFGNode (CFGNode atc c) = "(" ++ ppAnnotatedClause atc ++ ", " ++ C.pp c ++ ")" 
 
 data CFGEdge context
   = CFGEdge (CFGNode context) (CFGNode context) deriving (Show, Eq, Ord)

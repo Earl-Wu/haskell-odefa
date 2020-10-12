@@ -18,6 +18,7 @@ import Toploop.ToploopTypes
 import Toploop.ToploopOptions
 import Toploop.ToploopUtils
 import Utils.Exception
+import qualified PdsReachability as R
 
 import Control.Exception
 import Control.Monad.State.Lazy
@@ -38,34 +39,43 @@ data ToploopSituation m
       }
 
 valuesOfVariableFrom ::
-  (C.Context context) =>
-  AbstractVar -> 
-  AnnotatedClause -> 
-  PlumeAnalysis context -> 
-  (S.Set AbsFilteredVal, PlumeAnalysis context)
-valuesOfVariableFrom x acl analysis = 
-  let a = performFullClosure analysis in
-  valuesOfVariable x acl a
+  (C.Context context, ToploopMonad m) =>
+  AbstractVar ->
+  AnnotatedClause ->
+  PlumeAnalysis context ->
+  m (S.Set AbsFilteredVal, PlumeAnalysis context)
+valuesOfVariableFrom x acl analysis =
+  contextualValuesOfVariableFrom x acl C.empty analysis
 
 contextualValuesOfVariableFrom ::
-  (C.Context context) =>
+  (C.Context context, ToploopMonad m) =>
   AbstractVar ->
   AnnotatedClause ->
   context ->
   PlumeAnalysis context ->
-  (S.Set (AbsFilteredVal), PlumeAnalysis context)
+  m (S.Set (AbsFilteredVal), PlumeAnalysis context)
 contextualValuesOfVariableFrom x acl ctx analysis =
-  let a = performFullClosure analysis in
-  contextualValuesOfVariable x acl ctx a
+  let performFullClosureStepwise analysis =
+        if isFullyClosed analysis then
+          return analysis
+        else do
+          let analysis' = performClosureSteps analysis
+          toploopCFGReport (SomePlumeAnalysis analysis')
+          performFullClosureStepwise analysis'
+  in
+  do
+    a <- performFullClosureStepwise analysis
+    return $ contextualValuesOfVariable x acl ctx a
 
 pick :: (Monad m) => [a] -> ListT m a
 pick items = ListT $ return items
 
-findErrors :: 
-  (C.Context context) =>
-  PlumeAnalysis context -> ListT (State SomePlumeAnalysis) AnalysisError
+findErrors ::
+  forall context m.
+  (C.Context context, ToploopMonad m) =>
+  PlumeAnalysis context -> ListT (StateT SomePlumeAnalysis m) AnalysisError
 findErrors analysis =
-  let acls = 
+  let acls =
         analysis
         & expressionOf
         & transform
@@ -76,20 +86,20 @@ findErrors analysis =
     let (Clause xClause b) = acl
     let lookup
           :: AbstractVar
-          -> ListT (State SomePlumeAnalysis) (AbstractValue, AbsFilteredVal)
+          -> ListT (StateT SomePlumeAnalysis m) (AbstractValue, AbsFilteredVal)
         lookup x = do
           wrappedAnalysis <- lift get
           valSet <-
             withSomePlumeAnalysis wrappedAnalysis $ \unwrappedAnalysis ->
               do
-                let (valSet, unwrappedAnalysis') =
+                (valSet, unwrappedAnalysis') <-
                       valuesOfVariableFrom
                         x
                         (UnannotatedClause acl)
                         unwrappedAnalysis
-                lift $ put $ SomePlumeAnalysis unwrappedAnalysis'
+                put $ SomePlumeAnalysis unwrappedAnalysis'
                 return valSet
-          pick $ 
+          pick $
             S.toList valSet
             & L.map (\(filtv@(AbsFilteredVal v _ _)) -> (v, filtv))
     case b of
@@ -122,9 +132,6 @@ findErrors analysis =
         case (op, v) of
           (UnaOpBoolNot, AbsValueBool _) -> mzero
           otherwise -> return $ Toploop.ToploopAnalysisTypes.InvalidUnaryOperation xClause op x filtv
-
-
-
 
   -- let findErrorForClause :: AbsCls -> State SomePlumeAnalysis [AnalysisError]
   --     findErrorForClause acl = do
@@ -185,7 +192,7 @@ findErrors analysis =
   --             (UnaOpBoolNot, AbsValueBool _) -> []
   --             otherwise -> return $ Toploop.ToploopAnalysisTypes.InvalidUnaryOperation xClause op x filtv
   -- in
-  -- let acls = 
+  -- let acls =
   --       analysis
   --       & expressionOf
   --       & transform
@@ -216,18 +223,17 @@ analysisStepGeneral analysisTask situation =
           -- OSKPLUME ->
           -- OSMPLUME ->
   in
-  let checkForErrors :: State SomePlumeAnalysis (m [AnalysisError]) =
+  let checkForErrors :: StateT SomePlumeAnalysis m [AnalysisError] =
         -- TODO: fix the use of wrappedInitialAnalysis below
         -- this function should be stateful now
-        if (runIdentity $ topConfDisableInconsistencyCheck conf) 
-        then return $ return []
+        if runIdentity $ topConfDisableInconsistencyCheck conf
+        then return []
         else
           withSomePlumeAnalysis wrappedInitialAnalysis $ \initialAnalysis ->
           do
             errors :: [AnalysisError] <- runListT $ findErrors initialAnalysis
-            return $ do
-              toploopErrors errors
-              return $ errors
+            toploopErrors errors
+            return $ errors
   in
   let standardizedVariableAnalysisRequest =
         case (runIdentity $ topConfAnalyzeVars conf) of
@@ -243,10 +249,7 @@ analysisStepGeneral analysisTask situation =
               L.map (\(var, clause, ctx) -> Query var clause ctx) lst
             )
   in
-  let analyzeVariableValues :: [Query]
-                            -> State
-                                SomePlumeAnalysis
-                                (m [QnA])
+  let analyzeVariableValues :: [Query] -> StateT SomePlumeAnalysis m [QnA]
       analyzeVariableValues requests =
         let varnameToClauseMap =
               e
@@ -260,8 +263,8 @@ analysisStepGeneral analysisTask situation =
                 Nothing -> throw $ InvalidVariableAnalysis $ "No such variable: " ++ (show ident)
                 Just abscls -> abscls
         in
-        let mapQuery :: Query -> State SomePlumeAnalysis (m QnA)
-            mapQuery tryQuery = 
+        let mapQuery :: Query -> StateT SomePlumeAnalysis m QnA
+            mapQuery tryQuery =
               let (Query varName siteName userContext) = tryQuery in
               let LUVar varIdent = varName in
               let lookupVar = Var (Ident varIdent) in
@@ -272,16 +275,18 @@ analysisStepGeneral analysisTask situation =
                       END -> EndClause $ lastVarOf e
               in
               let analysisName = show analysisTask in
-              do 
+              do
                 curAnalysis <- get
-                let nastyHack (values,analysis) =
-                      unsafePerformIO $ do
+                -- let nastyHack (values,analysis) =
+                --       unsafePerformIO $ do
                         -- putStrLn $ show $ plumeGraph analysis
                         -- putStrLn $ show $ pdsReachability analysis
-                        putStrLn "This is the activeNodes: "
-                        putStrLn $ show $ plumeActiveNodes analysis
-                        return (values,analysis)
-                values <- 
+                        -- putStrLn "This is the activeNodes in PDS: "
+                        -- putStrLn $ show $ R.getActiveNodes (pdsReachability analysis)
+                        -- putStrLn "This is the reachable Nodes in the PDS: "
+                        -- putStrLn $ show $ R.getReachableNodes question (pdsReachability analysis)
+                        -- return (values,analysis)
+                values <-
                   withSomePlumeAnalysis curAnalysis $ \unwrappedAnalysis ->
                     do
                       let contextStack =
@@ -296,8 +301,7 @@ analysisStepGeneral analysisTask situation =
                                     C.add c a
                                   )
                                   C.empty
-                      let (values, analysis') =
-                          -- nastyHack $
+                      (values, analysis') <-
                             contextualValuesOfVariableFrom
                               lookupVar
                               site
@@ -305,33 +309,27 @@ analysisStepGeneral analysisTask situation =
                               unwrappedAnalysis
                       put $ SomePlumeAnalysis analysis'
                       return values
-                return $
-                  do
-                    toploopVariableAnalysis varName siteName userContext values analysisName
-                    return $ QnA (Query varName siteName userContext) values
+                toploopVariableAnalysis varName siteName userContext values analysisName
+                return $ QnA (Query varName siteName userContext) values
         in
-        sequence <$> mapM mapQuery requests
+        mapM mapQuery requests
   in
   do -- ToploopMonad
-    (errors, analyses) <-
-      flip evalState wrappedInitialAnalysis $
-      do -- State around ToploopMonad
+    (errors, qnas) <-
+      flip evalStateT wrappedInitialAnalysis $
+      do -- StateT SomePlumeAnalysis ToploopMonad
         errors <- checkForErrors
-        analyses <-
+        qnas <-
           case standardizedVariableAnalysisRequest of
-            Nothing ->
-              -- one return for state, another for ToploopMonad
-              return $ return []
+            Nothing -> return []
             Just requests -> analyzeVariableValues requests
-        return $
-          -- We have a pair of ToploopM values but we want a ToploopM of pair
-          (,) <$> errors <*> analyses
-    return $ AnalysisResult analyses errors
-    
-doAnalysisSteps :: 
-  (ToploopMonad m) => 
+        return (errors, qnas)
+    return $ AnalysisResult qnas errors
+
+doAnalysisSteps ::
+  (ToploopMonad m) =>
   ToploopSituation m -> m AnalysisReport
-doAnalysisSteps situation = 
+doAnalysisSteps situation =
   let conf = tsConf situation in
   if (runIdentity $ topConfDisableInconsistencyCheck conf) &&
      (runIdentity $ topConfAnalyzeVars conf) == AnalyzeNoVariables
@@ -339,7 +337,7 @@ doAnalysisSteps situation =
   else
     foldM
       (\analysisReport -> \atask ->
-          let plumeOrSplume = 
+          let plumeOrSplume =
                 let model = plumeAnalysisToStack atask in
                 let ataskName = show atask in
                 do
@@ -354,7 +352,7 @@ doAnalysisSteps situation =
 doEvaluation ::
   (ToploopMonad m) =>
   ToploopSituation m -> Bool -> m EvaluationResult
-doEvaluation situation hasErrors = 
+doEvaluation situation hasErrors =
   let callbacks = tsCallbacks situation in
   let conf = tsConf situation in
   let e = tsExpr situation in
@@ -364,16 +362,16 @@ doEvaluation situation hasErrors =
         toploopEvaluationDisabled ()
         return $ EvaluationDisabled
     SafelyEvaluate ->
-      if hasErrors 
+      if hasErrors
       then return $ EvaluationInvalidated
-      else 
+      else
         case eval (transform e) of
           Right (v, env) ->
             do
               toploopEvaluationResult v env
               return $ EvaluationCompleted v env
           Left str -> return $ EvaluationFailure $ show str
-    AlwaysEvaluate -> 
+    AlwaysEvaluate ->
       case eval (transform e) of
           Right (v, env) ->
             do
@@ -381,7 +379,7 @@ doEvaluation situation hasErrors =
               return $ EvaluationCompleted v env
           Left str -> return $ EvaluationFailure $ show str
 
-handleExpression :: 
+handleExpression ::
   (ToploopMonad m) =>
   Callbacks m -> Configuration -> ConcreteExpr -> m Result
 handleExpression cbs conf e =
@@ -395,10 +393,10 @@ handleExpression cbs conf e =
     Right _ ->
       let situation = ToploopSituation { tsExpr = e, tsConf = conf, tsCallbacks = cbs } in
       let reportM = doAnalysisSteps situation in
-      -- let _ = 
+      -- let _ =
       --       if topConfReportAnalysisTimes conf
-      --       then 
-      --         do 
+      --       then
+      --         do
       --           time <- analysisTimeInMs
       --           toploopAnalysisTimeReport 0
       --       else return ()
@@ -408,14 +406,14 @@ handleExpression cbs conf e =
         (report, runtime) <- time reportM
         toploopAnalysisTimeReport runtime
         -- Reporting errors, if any
-        let errorFree = 
+        let errorFree =
               M.elems report
               & L.foldl (\acc -> \(AnalysisResult _ errors) -> (L.null errors) && acc) True
         -- Report the result
         evaluationResult <- doEvaluation situation (not errorFree)
-        return $ 
+        return $
           Result { illformednesses = []
                 , analysisReport = report
                 , evaluationResult = evaluationResult
-                } 
+                }
 

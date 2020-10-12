@@ -1,4 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Main where
 
@@ -10,6 +11,9 @@ import Interpreter.Interpreter
 import Interpreter.InterpreterAst
 import Parser.Parser
 import Parser.Lexer
+import PlumeAnalysis.PlumeAnalysis
+import qualified PlumeAnalysis.Context as C
+import PlumeAnalysis.Utils.PlumeUtils
 import Toploop.Toploop
 import Toploop.ToploopAnalysisTypes
 import Toploop.ToploopTypes
@@ -19,9 +23,11 @@ import Utils.Exception
 import Control.DeepSeq
 import Control.Exception
 import Control.Monad
+import Control.Monad.State.Lazy
 import Data.Char
 import Data.Fixed
 import Data.Function
+import Data.IORef
 import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Data.Set as S
@@ -39,22 +45,83 @@ parseFile f = do
 
 stdoutCallbacks :: Callbacks MainMonad
 stdoutCallbacks = Callbacks
-      { cbIllformednesses = stdoutIllformednessesCallback,
-        cbVariableAnalysis = stdoutVariableAnalysisCallback,
-        cbErrors = stdoutErrorsCallback,
-        cbEvaluationResult = stdoutEvaluationResultCallback,
-        cbEvaluationFailed = stdoutEvaluationFailedCallback,
-        cbEvaluationDisabled = stdoutEvaluationDisabledCallback,
-        cbAnalysisTimeReport = stdoutAnalysisTimeReportCallback
+      { cbIllformednesses = stdoutIllformednessesCallback
+      , cbVariableAnalysis = stdoutVariableAnalysisCallback
+      , cbErrors = stdoutErrorsCallback
+      , cbEvaluationResult = stdoutEvaluationResultCallback
+      , cbEvaluationFailed = stdoutEvaluationFailedCallback
+      , cbEvaluationDisabled = stdoutEvaluationDisabledCallback
+      , cbAnalysisTimeReport = stdoutAnalysisTimeReportCallback
+      , cbtoploopCFGReport = stdoutCFGReportCallback
       }
 
 newtype MainMonad x = MainMonad (IO x)
   deriving (Functor, Applicative, Monad)
+-- MainMonad $ State $ Integer -> (IO x, Integer)
+-- newtype MainMonad x = MainMonad (State Integer (IO x))
+
+-- f :: a -> b
+-- instance Functor MainMonad where
+--   fmap f ma = MainMonad $ state $ (\s -> 
+--     let MainMonad stateVal = ma in
+--     let (ioA, s') = runState stateVal s in
+--     let ioRes = do 
+--           a <- ioA
+--           return $ f a
+--     in (ioRes, s')
+--     )
+
+-- -- TODO: Looks funny; check with Zach
+-- instance Applicative MainMonad where
+--   pure a = MainMonad $ pure $ pure a
+--   -- m (a -> b) -> m a -> m b
+--   -- (\s -> (IO (a -> b), s)) -> (\s -> (IO a, s)) -> (\s -> (IO b, s))
+--   (<*>) applFun a = MainMonad $ state $ (\s ->
+--     let MainMonad statefulFun = applFun in
+--     let MainMonad statefulVal = a in
+--     let (ioActualFun, s') = runState statefulFun s in
+--     let (ioActualVal, s'') = runState statefulVal s' in 
+--     let ioRes = do
+--           actualFun <- ioActualFun
+--           actualVal <- ioActualVal
+--           return $ actualFun actualVal
+--     in (ioRes, s'')
+--     )
+
+-- instance Monad MainMonad where
+--   return a = pure a
+--   -- m a -> (a -> m b) -> m b
+--   (>>=) ma f = MainMonad $ state $ (\s ->
+--     let MainMonad statefulVal = ma in
+--     let (ioActualVal, s') = runState statefulVal s in
+--     let ioRes = do
+--           actualVal <- ioActualVal
+--           let mb = f actualVal
+--           runState mb s'
+--     )
+
 instance ToploopMonad MainMonad where
+  -- getCallbacks = MainMonad $ pure $ pure $ stdoutCallbacks
   getCallbacks = MainMonad $ pure $ stdoutCallbacks
   
+  -- MainMonad $ State $ Integer -> (IO x, Integer) -> MainMonad $ State $ Integer -> (IO (x, Integer), Integer)
   --time :: MainMonad a -> MainMonad (a, Integer)
-  time m =
+  -- time m = MainMonad $ state $ (\s ->
+  --   let MainMonad stateVal = m in
+  --   let (ioA, s') = runState stateVal s in
+  --   let (ioRes) = 
+  --         do
+  --           startTime <- getSystemTime
+  --           a <- ioA
+  --           endTime <- deepseq a getSystemTime
+  --           let systemTimeToMs (MkSystemTime secs picoseconds) =
+  --                 toInteger secs * 1000 + toInteger picoseconds `div` 1000000000
+  --           let startMs = systemTimeToMs startTime
+  --           let endMs = systemTimeToMs endTime
+  --           return (a, endMs - startMs)
+  --   in (ioRes, s')
+  --   )
+  time m = 
     do
       startTime <- MainMonad getSystemTime
       a <- m
@@ -64,7 +131,7 @@ instance ToploopMonad MainMonad where
       let startMs = systemTimeToMs startTime
       let endMs = systemTimeToMs endTime
       return (a, endMs - startMs)
-    
+  
 runMainMonad (MainMonad m) = m  
 
 mainPutStr :: String -> MainMonad ()
@@ -131,134 +198,20 @@ stdoutAnalysisTimeReportCallback :: Integer -> MainMonad ()
 stdoutAnalysisTimeReportCallback time = 
   mainPutStrLn $ "Analysis took " ++ show time ++ " ms." 
 
+stdoutCFGReportCallback :: SomePlumeAnalysis -> MainMonad ()
+stdoutCFGReportCallback wrappedAnalysis = 
+  withSomePlumeAnalysis wrappedAnalysis $ \unwrappedAnalysis ->
+    let dotstr = cfgToDotString (plumeGraph unwrappedAnalysis) in
+    let filename = "cfg.dot" in
+    MainMonad $ do
+      writeFile filename dotstr
+
 handleExpr ::  Configuration -> ConcreteExpr -> IO Result
 handleExpr conf expr = do
   -- Make call to the handleExpression in Toploop
   -- Note that the toploop will print things for us if we give it the right
   -- callbacks
   runMainMonad $ handleExpression stdoutCallbacks conf expr
-
--- parseCLIArgs :: Configuration -> [String] -> (Configuration, [String])
--- parseCLIArgs configuration arguments =
---   case arguments of
---     [] -> (configuration, [])
---     "-A" : arguments' ->
---       let configuration' =
---             configuration { topConfAnalyzeVars = AnalyzeNoVariables, 
---                             topConfDisableAnalysis = True
---                           }
---       in
---       parseCLIArgs configuration' arguments'
---     "-I" : arguments' ->
---       let configuration' =
---             configuration { topConfDisableInconsistencyCheck = True }
---       in
---       parseCLIArgs configuration' arguments'
---     "-E" : arguments' ->
---       let configuration' =
---             configuration { topConfEvaluationMode = NeverEvaluate }
---       in
---       parseCLIArgs configuration' arguments'
---     "--report-analysis-time" : arguments' ->
---       let configuration' =
---             configuration { topConfReportAnalysisTimes = True }
---       in
---       parseCLIArgs configuration' arguments'
---     "--select-analysis" : analysisLst : arguments' ->
---       let analyses = stringSplit ',' analysisLst in
---       let addAnalysis conf analysisName = 
---             case analysisName of
---               "splume" ->
---                 let analysisTask = topConfAnalyses conf in
---                 conf { topConfAnalyses =  SPLUME : analysisTask}
---               num : analysisName' ->
---                 -- TODO: issue - cannot parse number > 9
---                 if (isDigit num) 
---                 then 
---                   if analysisName' == "plume" then
---                     let analysisTask = topConfAnalyses conf in
---                     let n = digitToInt num in
---                     conf { topConfAnalyses = PLUME n : analysisTask }
---                   else
---                   -- TODO: Report Error 
---                     undefined
---                 else
---                   -- TODO: Report Error 
---                   undefined
---       in
---       let configuration' = L.foldl addAnalysis configuration analyses in
---       parseCLIArgs configuration' arguments'
---     "--analyze-all-variables" : arguments' ->
---       let configuration' =
---             configuration { topConfAnalyzeVars =  AnalyzeToplevelVariables }
---       in
---       parseCLIArgs configuration' arguments'
---     "--analyze-no-variables" : arguments' ->
---       let configuration' =
---             configuration { topConfAnalyzeVars =  AnalyzeNoVariables }
---       in
---       parseCLIArgs configuration' arguments'
---     "--analyze-variable" : spec : arguments' ->
---       {-
---         a spec is of the following form:
---           var@loc:stackel,stackel,...
---       -}
---       let (varname, afterVarname) = break (=='@') spec in
---       let (loc, stack) =
---             case afterVarname of
---               [] -> (END, [])
---               _ : afterVarname' ->
---                 let (locationName, afterLocationName) =
---                       break (==':') afterVarname'
---                 in
---                 case afterLocationName of
---                   [] -> (ProgramPoint locationName, [])
---                   _ : afterLocationName' ->
---                     let ctxLst = stringSplit ',' afterLocationName' in
---                     (ProgramPoint locationName, L.map (\c -> LUVar c) ctxLst)
---       in
---       case topConfAnalyzeVars configuration of
---         AnalyzeToplevelVariables ->
---           {- TODO: error -}
---           undefined
---         AnalyzeNoVariables ->
---           let configuration' =
---                 configuration
---                   { topConfAnalyzeVars = AnalyzeSpecificVariables $
---                       (LUVar varname, loc, stack) : []
---                   }
---           in
---           parseCLIArgs configuration' arguments'
---         AnalyzeSpecificVariables lookups ->
---           let configuration' =
---                 configuration
---                   { topConfAnalyzeVars = AnalyzeSpecificVariables $
---                       (LUVar varname, loc, stack) : lookups
---                   }
---           in
---           parseCLIArgs configuration' arguments'
---     ["--select-analysis"] -> missingArgument
---     otherArg ->
---       -- If otherArg starts with "-" then complain.
---       -- Otherwise, do nothing and be finished.
---       if (L.any (\(c : rest) -> c == '-') otherArg)
---       then throw InvalidArgument
---       else (configuration, otherArg)
-      
---   where
---     missingArgument =
---       throw MissingCommandLineArgument
-
--- defaultConfiguration :: Configuration
--- defaultConfiguration = Configuration 
---   {
---     topConfAnalyses = [],
---     topConfAnalyzeVars = AnalyzeNoVariables,
---     topConfEvaluationMode = NeverEvaluate,
---     topConfDisableInconsistencyCheck = False,
---     topConfDisableAnalysis = False,
---     topConfReportAnalysisTimes = False
---   }
 
 main :: IO ()
 main =

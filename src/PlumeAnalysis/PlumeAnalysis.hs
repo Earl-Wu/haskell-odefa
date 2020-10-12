@@ -16,6 +16,7 @@ import PlumeAnalysis.PlumeSpecification
 import PlumeAnalysis.Types.PlumeGraph
 import PlumeAnalysis.Utils.PlumeUtils
 
+import Control.DeepSeq
 import Control.Monad
 import Data.Function
 import qualified Data.Either as E
@@ -25,9 +26,6 @@ import qualified Data.Map as M
 import qualified Data.Multimap as MM
 import qualified Data.Maybe as MB
 import qualified Data.Dequeue as Q
-
--- NOTE: TODO List
--- Implementing the edge fuctions
 
 type Lookup context = (AbstractVar, context, (S.Set Pattern), (S.Set Pattern))
 
@@ -50,6 +48,19 @@ data PlumeAnalysis context =
     , plumeSuccsPeerMap :: MM.Multimap S.Set (CFGNode context) (CFGNode context)
     -- , plumeLoggingData :: Maybe (PlumeAnalysisLoggingData)
     }
+
+instance NFData (PlumeAnalysis context) where
+  rnf plumeAnalysis =
+    seq (plumeGraph plumeAnalysis) $
+    seq (plumeExpression plumeAnalysis) $
+    seq (pdsReachability plumeAnalysis) $
+    seq (plumeActiveNodes plumeAnalysis) $
+    seq (plumeEdgesWorklist plumeAnalysis) $
+    seq (plumeArgMap plumeAnalysis) $
+    seq (plumeWireMap plumeAnalysis) $
+    seq (plumePredsPeerMap plumeAnalysis) $
+    seq (plumeSuccsPeerMap plumeAnalysis) $
+    ()
 
 -- getSize ::
 --   (C.Context context) =>

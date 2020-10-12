@@ -1,8 +1,11 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 module Toploop.ToploopTypes where
 
@@ -12,17 +15,23 @@ import AST.Ast
 import AST.AbstractAst
 import AST.AstWellformedness
 import Control.DeepSeq
+import Control.Monad.State.Lazy
+import Control.Monad.Trans.List
 import Interpreter.Interpreter
 import Interpreter.InterpreterAst
 import PlumeAnalysis.PlumeAnalysis
 import qualified PlumeAnalysis.Context as C
 import Toploop.ToploopAnalysisTypes
 
+import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Data.Set as S
 
 data SomePlumeAnalysis where
   SomePlumeAnalysis :: (C.Context c) => PlumeAnalysis c -> SomePlumeAnalysis
+
+instance NFData SomePlumeAnalysis where
+  rnf (SomePlumeAnalysis analysis) = rnf analysis
 
 withSomePlumeAnalysis ::
   forall a.
@@ -115,6 +124,84 @@ class (Monad m) => ToploopMonad m where
   toploopAnalysisTimeReport time = do
     cb <- getCallbacks
     (cbAnalysisTimeReport cb) time
+  toploopCFGReport :: SomePlumeAnalysis -> m ()
+  toploopCFGReport analysis = do
+    cb <- getCallbacks
+    (cbtoploopCFGReport cb) analysis
+
+instance (ToploopMonad m, NFData s) => ToploopMonad (StateT s m) where
+  --getCallbacks :: (StateT s m) (Callbacks (StateT s m))
+  getCallbacks =
+    do
+      callbacks <- lift getCallbacks
+      return $ Callbacks
+        { cbIllformednesses = \ills ->
+            lift $
+              cbIllformednesses callbacks ills
+        , cbVariableAnalysis = \var graphPos ctx absfiltval analysisName ->
+            lift $
+              cbVariableAnalysis callbacks var graphPos ctx absfiltval analysisName
+        , cbErrors = \errors ->
+            lift $
+              cbErrors callbacks errors
+        , cbEvaluationResult = \interpVar env ->
+            lift $
+              cbEvaluationResult callbacks interpVar env
+        , cbEvaluationFailed = \err ->
+            lift $ 
+              cbEvaluationFailed callbacks err
+        , cbEvaluationDisabled = \() ->
+            lift $
+              cbEvaluationDisabled callbacks ()
+        , cbAnalysisTimeReport = \n ->
+            lift $
+              cbAnalysisTimeReport callbacks n
+        , cbtoploopCFGReport = \analysis ->
+            lift $ 
+              cbtoploopCFGReport callbacks analysis
+        }
+  --time :: (NFData x) => (StateT s m) x -> (StateT s m) (x, Integer)
+  time mx =
+    let StateT rawmx {- :: s -> (m (x, s)) -} = mx in
+    StateT $ (\s ->
+      -- Returns an "m ((x, Integer), s)"
+      let rearrange ((x, s), t) = ((x, t), s) in
+      rearrange <$> (time $ rawmx s)
+    )
+
+instance (ToploopMonad m) => ToploopMonad (ListT m) where
+  getCallbacks =
+    do
+      callbacks <- lift getCallbacks
+      return $ Callbacks
+        { cbIllformednesses = \ills ->
+            lift $
+              cbIllformednesses callbacks ills
+        , cbVariableAnalysis = \var graphPos ctx absfiltval analysisName ->
+            lift $
+              cbVariableAnalysis callbacks var graphPos ctx absfiltval analysisName
+        , cbErrors = \errors ->
+            lift $
+              cbErrors callbacks errors
+        , cbEvaluationResult = \interpVar env ->
+            lift $
+              cbEvaluationResult callbacks interpVar env
+        , cbEvaluationFailed = \err ->
+            lift $ 
+              cbEvaluationFailed callbacks err
+        , cbEvaluationDisabled = \() ->
+            lift $
+              cbEvaluationDisabled callbacks ()
+        , cbAnalysisTimeReport = \n ->
+            lift $
+              cbAnalysisTimeReport callbacks n
+        , cbtoploopCFGReport = \analysis ->
+            lift $ 
+              cbtoploopCFGReport callbacks analysis
+        }
+  --time :: (NFData x) => (ListT m) x -> (ListT m) (x, Integer)
+  time mx = error "time on ListT"
+
 
 data Callbacks m
   = Callbacks
@@ -127,7 +214,8 @@ data Callbacks m
         cbEvaluationResult :: InterpVar -> Environment -> m (),
         cbEvaluationFailed :: String -> m (),
         cbEvaluationDisabled :: () -> m (),
-        cbAnalysisTimeReport:: Integer -> m ()
+        cbAnalysisTimeReport :: Integer -> m (),
+        cbtoploopCFGReport :: SomePlumeAnalysis -> m ()
         -- TODO: Do we need this?
         -- cbSourceStatisticsCallback ::           
       }

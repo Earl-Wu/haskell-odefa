@@ -72,6 +72,8 @@ data ClauseBody x v
 data Clause x v
   = Clause (Var x) (ClauseBody x v) deriving (Show, Eq, Ord, Generic, NFData)
 
+ppClause (Clause (Var (Ident x)) _) = x
+
 newtype Expr x v = Expr [(Clause x v)] deriving (Show, Eq, Ord, Generic, NFData)
 
 data Pattern

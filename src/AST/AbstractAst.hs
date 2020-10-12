@@ -44,7 +44,17 @@ data AnnotatedClause
   | EnterClause AbstractVar AbstractVar AbstractCls
   | ExitClause AbstractVar AbstractVar AbstractCls
   | StartClause AbstractVar
-  | EndClause AbstractVar deriving (Show, Eq, Ord)
+  | EndClause AbstractVar deriving (Eq, Ord, Show)
+
+ppAnnotatedClause atc =
+  case atc of
+    UnannotatedClause (Clause (Var (Ident x)) _) -> x
+    EnterClause (Var (Ident x1)) (Var (Ident x2)) (Clause (Var (Ident f)) _) ->
+        "Enter " ++ f ++ " with " ++ x1 ++ "=" ++ x2 
+    ExitClause (Var (Ident x1)) (Var (Ident x2)) (Clause (Var (Ident f)) _) ->
+        "Exit " ++ f ++ " with " ++ x1 ++ "=" ++ x2 
+    StartClause (Var (Ident x)) -> "Start block " ++ x
+    EndClause (Var (Ident x)) -> "End block " ++ x
 
 instance AstTransform ConcreteVal AbstractValue where
   transform v =
@@ -101,7 +111,7 @@ patternProjection pattern label =
     otherwise ->
       throw $ InvariantFailureException $
         "Tried to project out of a non-record pattern" ++
-        (show pattern) ++ "in `PlumeAnalysis.hs:pattern_projection'."
+        (Prelude.show pattern) ++ "in `PlumeAnalysis.hs:pattern_projection'."
 
 patternSetProjection :: S.Set Pattern -> Ident -> S.Set Pattern
 patternSetProjection set label =
@@ -125,7 +135,7 @@ labelsInPattern pattern =
     otherwise ->
       throw $ InvariantFailureException $
         "Tried to enumerate labels out of a non-record pattern" ++
-        (show pattern) ++ "in `PlumeAnalysis.hs:labels_in_pattern'."
+        (Prelude.show pattern) ++ "in `PlumeAnalysis.hs:labels_in_pattern'."
 
 labelsInRecord :: AbstractRec -> S.Set Ident
 labelsInRecord (RecordValue record) =

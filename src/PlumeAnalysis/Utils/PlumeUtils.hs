@@ -5,6 +5,7 @@ module PlumeAnalysis.Utils.PlumeUtils where
 import AST.Ast
 import AST.AstUtils
 import AST.AbstractAst
+import qualified PlumeAnalysis.Context as C
 import PlumeAnalysis.Types.PlumeGraph
 import Utils.Exception
 
@@ -138,3 +139,14 @@ abstractUnaryOperation unop arg =
   case (unop, arg) of
     (UnaOpBoolNot, AbsValueBool b) -> Just [AbsValueBool $ not b]
     otherwise -> Nothing
+
+cfgToDotString :: forall c. (C.Context c) => CFG c -> String
+cfgToDotString cfg = 
+  let allEdges = allCFGEdges cfg in
+  let startingStr = "digraph G { " in
+  let foldFun acc (CFGEdge n1 n2) = 
+        acc ++ "\"" ++ (ppCFGNode n1) ++ "\" -> " ++ "\"" ++ (ppCFGNode n2) ++ "\";"
+  in
+  let edgesStr = S.foldl foldFun startingStr allEdges in
+  let finalGraph = edgesStr ++ " }" in
+  finalGraph
