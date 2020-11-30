@@ -3,6 +3,8 @@ module TestingFramework.ExpectationLexer where
 
 import TestingFramework.Token
 
+import qualified Data.List as L 
+
 }
 
 %wrapper "basic"
@@ -35,6 +37,7 @@ tokens :-
   "ANALYSES"    { \s -> ANALYSES }
   "RESULTS"     { \s -> RESULTS }
   "CONSISTENCIES"     { \s -> CONSISTENCIES }
+  "EVALUATE"     { \s -> EVALUATE }
   "WELL_FORMED"     { \s -> WELL_FORMED }
   "ILL_FORMED"     { \s -> ILL_FORMED }
   "STUCK"     { \s -> STUCK }
@@ -47,4 +50,4 @@ tokens :-
   "OSMPLUME" { \s -> OSMPLUME }
   $digit+				{ \s -> INTEGER (read s) }
   $identStart [$identCont]*		{ \s -> IDENTIFIER s }
-  @output { \s -> OUTPUT s }
+  @output { \s -> OUTPUT (L.reverse $ L.tail $ L.reverse $ L.tail s) }

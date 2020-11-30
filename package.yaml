@@ -27,11 +27,14 @@ dependencies:
 - bytestring
 - dequeue
 - deepseq
+- directory
+- filepath
 - mtl >= 2.2.2
 - tasty
 - tasty-hunit
 - time >= 1.8.0.2
 - transformers >= 0.5.6.2
+
 
 library:
   source-dirs: src

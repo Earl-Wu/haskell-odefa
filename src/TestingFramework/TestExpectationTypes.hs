@@ -21,7 +21,7 @@ data Expectation
   | ExpectWellFormed
   | ExpectIllFormed
 
-data ChecklistItems
+data ChecklistItem
   = CLExpectEvaluate
   | CLExpectStuck
   | CLExpectWellFormed
@@ -30,7 +30,7 @@ data ChecklistItems
   | CLExpectConsistency AnalysisConsistencyExpectation
 
 data AnalysisExpectation
-  = AnalysisExpectation [Query] [AnalysisTask] [Result] [AnalysisConsistencyExpectation]
+  = AnalysisExpectation [Query] [AnalysisTask] [TestResult] [AnalysisConsistencyExpectation]
 
 data ExpectationFile
   = Expectations (Maybe AnalysisExpectation) [Expectation]

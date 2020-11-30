@@ -17,9 +17,9 @@ import PlumeAnalysis.Types.PlumeGraph
 import PlumeAnalysis.Utils.PlumeUtils
 
 import Control.DeepSeq
-import Control.Monad
+-- import Control.Monad
 import Data.Function
-import qualified Data.Either as E
+-- import qualified Data.Either as E
 import qualified Data.List as L
 import qualified Data.Set as S
 import qualified Data.Map as M
@@ -124,7 +124,8 @@ addOneEdge edgeIn analysis =
     in
     let (plumeActiveNodes', plumeActiveNonImmediateNodes') =
           let maybeNewActiveRootNode =
-                let (CFGEdge nodeLeft nodeRight) = edgeIn in
+                -- let (CFGEdge nodeLeft nodeRight) = edgeIn in
+                let (CFGEdge _ nodeRight) = edgeIn in
                 if S.notMember nodeRight (plumeActiveNodes analysis)
                 then Just nodeRight
                 else Nothing
@@ -249,7 +250,8 @@ analyzeNote note =
     (Push BottomOfStack) :
       (Push (LookupVar x patsp patsn)) :
       [] <- return stackActions
-    ProgramPointState (CFGNode acl context) <- return startNode
+    -- ProgramPointState (CFGNode acl context) <- return startNode
+    ProgramPointState (CFGNode _ context) <- return startNode
     ResultState filterVarVal <- return endNode
     let AbsFilteredVal varVal _ _ = filterVarVal
     return ((x, context, patsp, patsn), varVal)
@@ -506,7 +508,7 @@ cfgClosureStep analysis =
                                       }
                   in
                   accAnalysis'''
-            UnannotatedClause (absCls@(Clause x1 (ConditionalBody subject pattern f1 f2))) ->
+            UnannotatedClause (Clause x1 (ConditionalBody subject pattern f1 f2)) ->
               let oldWireMap = plumeWireMap analysis in
               let posmatchLookupKey = (subject, ctx, S.singleton pattern, S.empty)
               in

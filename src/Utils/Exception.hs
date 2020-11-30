@@ -3,7 +3,9 @@ module Utils.Exception
   InvalidVariableAnalysis(..),
   MissingCommandLineArgument(..),
   TooManyCommandLineArguments(..),
-  InvalidArgument(..)
+  InvalidArgument(..),
+  ExpectationParseFailure(..),
+  FileTestCreationFaliure(..)
 ) where
 
 import Control.Exception
@@ -32,3 +34,13 @@ data InvalidArgument = InvalidArgument
   deriving (Show)
 
 instance Exception InvalidArgument
+
+data ExpectationParseFailure = ExpectationParseFailure String
+  deriving (Show)
+
+instance Exception ExpectationParseFailure
+
+data FileTestCreationFaliure = FileTestCreationFaliure String
+  deriving (Show)
+
+instance Exception FileTestCreationFaliure

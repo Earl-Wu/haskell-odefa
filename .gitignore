@@ -5,3 +5,4 @@ odefa.cabal
 output.txt
 .vsls.json
 toploop
+cfg-*.pdf

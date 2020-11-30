@@ -1,16 +1,12 @@
 module Main where
 
 import Test.Tasty
-import Test.Tasty.HUnit
-
-import qualified Data.Set as S
-import Data.Function
-import PdsReachability.Reachability
-import PdsReachability.Structure
 
 import qualified Spec
 import qualified PrimeTest
+import qualified TestingFramework.TestFiles
 
 main :: IO ()
 main = do
-  defaultMain (testGroup "all tests" [Spec.tests, PrimeTest.tests])
+  unitTests <- TestingFramework.TestFiles.tests
+  defaultMain (testGroup "all tests" [Spec.tests, PrimeTest.tests, unitTests])

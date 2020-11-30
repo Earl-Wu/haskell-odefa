@@ -67,4 +67,4 @@ flags: {}
 # compiler-check: newer-minor
 
 ghc-options:
-  $locals: -Wall -Werror
+  # $locals: -Wall -Werror

@@ -18,6 +18,7 @@ data TestToken
   | ANALYSES
   | RESULTS
   | CONSISTENCIES
+  | EVALUATE
   | WELL_FORMED
   | ILL_FORMED
   | STUCK

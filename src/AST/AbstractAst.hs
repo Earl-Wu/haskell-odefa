@@ -13,14 +13,15 @@ import AST.Ast
 import AST.AstUtils
 import Control.DeepSeq
 import Data.Function
-import qualified Data.Either as E
+-- import qualified Data.Either as E
 import qualified Data.List as L
 import qualified Data.Set as S
 import qualified Data.Map as M
 import qualified Data.Maybe as MB
-import qualified Control.Monad as MND
+-- import qualified Control.Monad as MND
 import Control.Exception
 import Utils.Exception
+import Utils.PpUtils
 import qualified Utils.NondeterminismMonad as ND
 
 type AbstractVar = Var Ident
@@ -39,6 +40,117 @@ data AbstractValue
 
 data AbsFilteredVal = AbsFilteredVal AbstractValue (S.Set Pattern) (S.Set Pattern) deriving (Show, Eq, Ord, Generic, NFData)
 
+ppIdent :: Ident -> String
+ppIdent (Ident s) = s
+
+ppAbstractVar :: AbstractVar -> String
+ppAbstractVar (Var i) = ppIdent i
+
+ppAbstractRecordValue :: AbstractRec -> String
+ppAbstractRecordValue (RecordValue r) =
+  let ppElement (k, v) = 
+        ppIdent k ++ "=" ++ ppAbstractVar v
+  in
+  ppConcatSepDelim "{" "}" "," ppElement (M.assocs r)
+
+ppAbstractFunctionValue :: AbstractFun -> String
+ppAbstractFunctionValue (FunctionValue x e) =
+  (ppAbstractVar x) ++ " -> (" ++ (ppAbstractExpr e) ++ ")"  
+
+ppAbstractValue :: AbstractValue -> String
+ppAbstractValue v = 
+  case v of
+    AbsValueRecord r -> ppAbstractRecordValue r
+    AbsValueFunction f -> ppAbstractFunctionValue f
+    AbsValueBool b -> if b then "true" else "false"
+    AbsValueInt -> "int"
+    AbsValueString -> "string"
+
+ppUnaryOperator :: UnaryOperator -> String
+ppUnaryOperator unop = 
+  case unop of
+    UnaOpBoolNot -> "not"
+
+ppBinaryOperator :: BinaryOperator -> String
+ppBinaryOperator binop = 
+  case binop of
+    BinOpPlus -> "+"
+    BinOpIntMinus -> "-"
+    BinOpIntLessThan -> "<"
+    BinOpIntLessThanOrEqualTo -> "<="
+    BinOpEqualTo -> "=="
+    BinOpBoolAnd -> "and"
+    BinOpBoolOr -> "or" 
+
+ppCallSiteAnnotations :: CallSiteAnnot -> String
+ppCallSiteAnnotations annot =
+  case csaContextuality annot of
+    CallSiteContextual -> ""
+    CallSiteAcontextual -> "@@acontextual"
+    CallSiteAcontextualFor sites ->
+      let printer name = 
+            "@@acontextual(" ++ ppIdent name ++ ")"
+      in
+      let loop names = 
+            case names of
+              [] -> ""
+              name : [] -> printer name
+              name : names' -> printer name ++ " " ++ loop names'
+      in loop $ S.toList sites
+
+ppPattern :: Pattern -> String
+ppPattern p = 
+  case p of
+    RecordPattern els ->
+      let ppElement (k, v) = 
+            ppIdent k ++ "=" ++ ppPattern v
+      in ppConcatSepDelim "{" "}" ", " ppElement (M.assocs els)
+    FunPattern -> "fun"
+    IntPattern -> "int"
+    BoolPattern b -> if b then "true" else "false"
+    AnyPattern -> "any"
+    StringPattern -> "string"
+
+ppPatternSet :: S.Set Pattern -> String
+ppPatternSet s = 
+  ppConcatSepDelim "{" "}" ", " ppPattern (S.toList s)
+
+ppAbstractClauseBody :: AbstractClsBd -> String
+ppAbstractClauseBody b = 
+  case b of
+    VarBody x -> ppAbstractVar x
+    ValueBody v -> ppAbstractValue v
+    ApplBody x1 x2 annot -> ppAbstractVar x1 ++ " " ++ ppAbstractVar x2 ++ " " ++ ppCallSiteAnnotations annot
+    ConditionalBody x p f1 f2 ->
+      ppAbstractVar x ++ " ~ " ++
+      ppPattern p ++ "?" ++
+      ppAbstractFunctionValue f1 ++ " : " ++
+      ppAbstractFunctionValue f2
+    ProjectionBody x i ->
+      ppAbstractVar x ++ "." ++ ppIdent i
+    BinaryOperationBody x1 op x2 ->
+      ppAbstractVar x1 ++ " " ++ ppBinaryOperator op ++ " " ++ ppAbstractVar x2
+    UnaryOperationBody op x1 ->
+      ppUnaryOperator op ++ " " ++ ppAbstractVar x1
+
+ppAbstractClause :: AbstractCls -> String
+ppAbstractClause (Clause x b) = 
+  ppAbstractVar x ++ " = " ++ ppAbstractClauseBody b
+
+ppAbstractExpr :: AbstractExpr -> String
+ppAbstractExpr (Expr cls) = 
+  ppConcatSep ";" ppAbstractClause cls
+
+ppAbsFilteredVal :: AbsFilteredVal -> String
+ppAbsFilteredVal (AbsFilteredVal v patsp patsn) =
+  if (S.null patsp && S.null patsn)
+  then ppAbstractValue v
+  else ppAbstractValue v ++ ":" ++ "(+" ++ ppPatternSet patsp ++ ",-" ++ ppPatternSet patsn ++ ")" 
+
+ppAbsFilValSet :: S.Set AbsFilteredVal -> String
+ppAbsFilValSet s = 
+  ppConcatSepDelim "{" "}" ", " ppAbsFilteredVal (S.toList s)
+
 data AnnotatedClause
   = UnannotatedClause AbstractCls
   | EnterClause AbstractVar AbstractVar AbstractCls
@@ -46,6 +158,7 @@ data AnnotatedClause
   | StartClause AbstractVar
   | EndClause AbstractVar deriving (Eq, Ord, Show)
 
+ppAnnotatedClause :: AnnotatedClause -> String
 ppAnnotatedClause atc =
   case atc of
     UnannotatedClause (Clause (Var (Ident x)) _) -> x
@@ -84,7 +197,7 @@ negativePatternSetSelection recordType patternSet =
                 AnyPattern ->
                   throw $ InvariantFailureException $
                     "Shouldn't call `negativePatternSetSelection' with a pattern set that contains `any' patterns."
-                otherwise -> False
+                _ -> False
         in
         L.filter filterFun patternLst
   in
@@ -108,7 +221,7 @@ patternProjection pattern label =
       M.lookup label m
     AnyPattern ->
       Nothing
-    otherwise ->
+    _ ->
       throw $ InvariantFailureException $
         "Tried to project out of a non-record pattern" ++
         (Prelude.show pattern) ++ "in `PlumeAnalysis.hs:pattern_projection'."
@@ -125,14 +238,14 @@ isRecordPatternSet set =
   & S.toList
   & L.all (\pat -> case pat of RecordPattern _ -> True
                                AnyPattern -> True
-                               otherwise -> False)
+                               _ -> False)
 
 labelsInPattern :: Pattern -> S.Set Ident
 labelsInPattern pattern =
   case pattern of
     RecordPattern m -> M.keysSet m
     AnyPattern -> S.empty
-    otherwise ->
+    _ ->
       throw $ InvariantFailureException $
         "Tried to enumerate labels out of a non-record pattern" ++
         (Prelude.show pattern) ++ "in `PlumeAnalysis.hs:labels_in_pattern'."
