@@ -12,5 +12,5 @@ ppConcatSep sep ppItem items =
             case entities of
                 [] -> ""
                 entity : [] -> ppItem entity
-                entity : entities' -> ppItem entity ++ sep ++ " " ++ loop entities'
+                entity : entities' -> ppItem entity ++ sep ++ loop entities'
     in loop items

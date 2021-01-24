@@ -166,7 +166,8 @@ observeQueries analysis reprs expectation =
         CLExpectResult expect ->
             let (TestResult a expectQ (ResultString expectRes)) = expect in
             if analysis == a 
-            then
+            then do
+                -- mapM_ (putStrLn . (\(QnA _ actualRes) -> "Res: " ++ ppAbsFilValSet actualRes)) reprs
                 let anyMatch = L.any (\repr ->
                                         case repr of
                                             QnA actualQ actualRes -> 
@@ -177,7 +178,7 @@ observeQueries analysis reprs expectation =
                                                     expectRes == ppResStr
                                                 else False
                                      ) reprs
-                in if anyMatch then return $ Nothing else return $ Just expectation
+                if anyMatch then return $ Nothing else return $ Just expectation
             else return $ Just expectation
         _ -> return $ Just expectation
 

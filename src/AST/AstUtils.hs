@@ -111,6 +111,7 @@ useOccurrences expr =
 nonUniqueBindings :: ConcreteExpr -> S.Set ConcreteVar
 nonUniqueBindings expr =
   bindingsWithRepetition expr
+  & L.sort
   & L.group
   & L.filter (\l -> (L.length l) > 1)
   & L.concat

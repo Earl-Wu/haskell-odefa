@@ -51,7 +51,7 @@ ppAbstractRecordValue (RecordValue r) =
   let ppElement (k, v) = 
         ppIdent k ++ "=" ++ ppAbstractVar v
   in
-  ppConcatSepDelim "{" "}" "," ppElement (M.assocs r)
+  ppConcatSepDelim "{" "}" ", " ppElement (M.assocs r)
 
 ppAbstractFunctionValue :: AbstractFun -> String
 ppAbstractFunctionValue (FunctionValue x e) =

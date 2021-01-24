@@ -10,7 +10,7 @@ import qualified Data.Maybe as MB
 type Environment = M.Map InterpVar InterpVal
 
 data OdefaInterpreterError = VariableNotInCurrentEnvironment InterpVar Environment
-  | EmptyExpression | NonFunctionApplication FreshIdent InterpVal
+  | EmptyExpression | NonFunctionApplication (Var FreshIdent) InterpVal
   | InvalidLabelProjection Ident InterpVal | NonRecordProjection String InterpVal
   | InvalidBinaryOperation InterpVal BinaryOperator InterpVal
   | InvalidUnaryOperation UnaryOperator InterpVal deriving (Show)
@@ -123,6 +123,7 @@ evaluate env lastVar cls =
                               v <- varLookUp env x'
                               case v of ValueFunction f -> evaluate env (Just x)
                                                            $ freshWire f x'' x ++ t
+                                        _ -> Left $ NonFunctionApplication x' v
                           ConditionalBody x' p f1 f2 ->
                             do
                               b <- matches env x' p

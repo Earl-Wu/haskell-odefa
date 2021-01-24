@@ -2,6 +2,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
+
+-- TODO: Translate the smarter closure algorithm 
+
 module PlumeAnalysis.PlumeAnalysis where
 
 import AST.AbstractAst
