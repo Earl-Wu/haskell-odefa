@@ -20,7 +20,7 @@ isImmediate :: AnnotatedClause -> Bool
 isImmediate acl =
   case acl of
     UnannotatedClause cls -> isClauseImmediate cls
-    otherwise -> True
+    _ -> True
 
 edgesFromNodeList ::
   (Ord context) => [CFGNode context] -> S.Set (CFGEdge context)
