@@ -1,10 +1,10 @@
-name:                odefa
+name:                extensional-plume
 version:             0.1.0.0
-github:              "githubuser/helloworld"
+github:              "Earl-Wu/haskell-odefa"
 license:             BSD3
-author:              "Author name here"
+author:              "Earl Wu"
 maintainer:          "example@example.com"
-copyright:           "2020 Author name here"
+copyright:           "2021-2022 Earl Wu, Zachary Palmer"
 
 extra-source-files:
 - README.md
@@ -40,7 +40,7 @@ library:
   source-dirs: src
 
 executables:
-  odefa-exe:
+  extensional-plume-exe:
     main:                Main.hs
     source-dirs:         app
     ghc-options:
@@ -48,10 +48,10 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - odefa
+    - extensional-plume
 
 tests:
-  odefa-test:
+  extensional-plume-test:
     main:                TestMain.hs
     source-dirs:         test
     ghc-options:
@@ -59,4 +59,4 @@ tests:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - odefa
+    - extensional-plume
