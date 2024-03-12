@@ -1,0 +1,137 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.36.0.
+--
+-- see: https://github.com/sol/hpack
+
+name:           extensional-plume
+version:        0.1.0.0
+description:    Please see the README on GitHub at <https://github.com/githubuser/helloworld#readme>
+homepage:       https://github.com/Earl-Wu/haskell-odefa#readme
+bug-reports:    https://github.com/Earl-Wu/haskell-odefa/issues
+author:         Earl Wu
+maintainer:     example@example.com
+copyright:      2021-2022 Earl Wu, Zachary Palmer
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    ChangeLog.md
+
+source-repository head
+  type: git
+  location: https://github.com/Earl-Wu/haskell-odefa
+
+library
+  exposed-modules:
+      AST.AbstractAst
+      AST.Ast
+      AST.AstUtils
+      AST.AstWellformedness
+      Interpreter.Interpreter
+      Interpreter.InterpreterAst
+      Parser.Lexer
+      Parser.Parser
+      Parser.Token
+      PdsReachability
+      PdsReachability.Reachability
+      PdsReachability.Specification
+      PdsReachability.Structure
+      PdsReachability.UserDataTypes
+      PlumeAnalysis.Context
+      PlumeAnalysis.Pds.PdsEdgeFunctions
+      PlumeAnalysis.Pds.PlumePdsDynamicPopHandler
+      PlumeAnalysis.Pds.PlumePdsDynamicPopTypes
+      PlumeAnalysis.Pds.PlumePdsStructureTypes
+      PlumeAnalysis.PlumeAnalysis
+      PlumeAnalysis.PlumeSpecification
+      PlumeAnalysis.Types.PlumeGraph
+      PlumeAnalysis.Utils.PlumeUtils
+      TestingFramework.ExpectationLexer
+      TestingFramework.ExpectationParser
+      TestingFramework.TestExpectationTypes
+      TestingFramework.TestFiles
+      TestingFramework.TestUtils
+      TestingFramework.Token
+      Toploop.Toploop
+      Toploop.ToploopAnalysisTypes
+      Toploop.ToploopOptions
+      Toploop.ToploopTypes
+      Toploop.ToploopUtils
+      Utils.Exception
+      Utils.NondeterminismMonad
+      Utils.PpUtils
+  other-modules:
+      Paths_extensional_plume
+  hs-source-dirs:
+      src
+  build-depends:
+      array
+    , base >=4.7 && <5
+    , bytestring
+    , containers
+    , deepseq
+    , dequeue
+    , directory
+    , filepath
+    , more-containers
+    , mtl >=2.2.2
+    , tasty
+    , tasty-hunit
+    , time >=1.8.0.2
+    , transformers >=0.5.6.2
+  default-language: Haskell2010
+
+executable extensional-plume-exe
+  main-is: Main.hs
+  other-modules:
+      Paths_extensional_plume
+  hs-source-dirs:
+      app
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      array
+    , base >=4.7 && <5
+    , bytestring
+    , containers
+    , deepseq
+    , dequeue
+    , directory
+    , extensional-plume
+    , filepath
+    , more-containers
+    , mtl >=2.2.2
+    , tasty
+    , tasty-hunit
+    , time >=1.8.0.2
+    , transformers >=0.5.6.2
+  default-language: Haskell2010
+
+test-suite extensional-plume-test
+  type: exitcode-stdio-1.0
+  main-is: TestMain.hs
+  other-modules:
+      PrimeTest
+      Spec
+      Paths_extensional_plume
+  hs-source-dirs:
+      test
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      array
+    , base >=4.7 && <5
+    , bytestring
+    , containers
+    , deepseq
+    , dequeue
+    , directory
+    , extensional-plume
+    , filepath
+    , more-containers
+    , mtl >=2.2.2
+    , tasty
+    , tasty-hunit
+    , time >=1.8.0.2
+    , transformers >=0.5.6.2
+  default-language: Haskell2010
